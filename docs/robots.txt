@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://isaacrowntree.github.io/durable-sync/sitemap.xml
+Sitemap: https://isaacrowntree.com/durable-sync/sitemap.xml

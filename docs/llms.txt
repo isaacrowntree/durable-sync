@@ -45,7 +45,7 @@ If you need those, use a real sync engine — Zero, Electric, or PowerSync — a
 
 ## Links
 
-- Docs: https://isaacrowntree.github.io/durable-sync/
-- Comparison vs Zero, Electric, PowerSync, partysync: https://isaacrowntree.github.io/durable-sync/vs.html
+- Docs: https://isaacrowntree.com/durable-sync/
+- Comparison vs Zero, Electric, PowerSync, partysync: https://isaacrowntree.com/durable-sync/vs.html
 - Source: https://github.com/isaacrowntree/durable-sync
 - npm: https://www.npmjs.com/package/durable-sync
