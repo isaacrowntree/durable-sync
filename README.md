@@ -214,6 +214,17 @@ If you need any of those, you want a real sync engine —
 [Zero](https://zero.rocicorp.dev/), [Electric](https://electric-sql.com/),
 [PowerSync](https://www.powersync.com/) — and the Postgres that comes with it.
 
+## Who uses it
+
+[Rampset](https://github.com/isaacrowntree/rampset) — an offline-first barbell
+training log on Cloudflare Workers, Access and R2. It's where this was
+extracted from, and it's what the four warnings above are scar tissue from: a
+real workout was destroyed by the `res.ok` one, in production, before it was
+understood.
+
+Rampset keeps what a sync library can't have — what its ops *mean*, and what
+applying one does to its database — and this package owns the transport.
+
 ## Prior art
 
 - **[partysync](https://github.com/cloudflare/partykit/tree/main/packages/partysync)**
