@@ -141,13 +141,15 @@
             <p class="eyebrow">Why this exists</p>
             <h2 id="why-h">The platform already gives you the hard part</h2>
             <p>
-              Every credible offline-first engine — Zero, Electric, PowerSync,
-              InstantDB — wants Postgres and a long-running container. On an
-              all-Cloudflare stack that is a second backend, forever. Triplit had a
-              Durable Object adapter and was
-              <a href="https://supabase.com/blog/triplit-joins-supabase">acquired and abandoned</a>.
-              Meanwhile a Durable Object <strong>is a single-threaded ordering point, per
-              user</strong> — which is the thing everyone else needs Postgres for.
+              Every credible offline-first engine — Electric, PowerSync, InstantDB —
+              wants Postgres and a long-running container. On an all-Cloudflare stack
+              that is a second backend, forever. (Zero wants both too, and doesn't do
+              offline writes at all — it says so itself.) Triplit had a Durable Object
+              adapter, then its co-founder
+              <a href="https://supabase.com/blog/triplit-joins-supabase">joined Supabase</a>
+              and it has sat unmaintained since. Meanwhile a Durable Object
+              <strong>is a single-threaded ordering point, per user</strong> — which is
+              the thing everyone else needs Postgres for.
             </p>
           </div>
 
@@ -345,7 +347,7 @@
             <p>
               If you need any of those, you want a real sync engine —
               <a href="https://zero.rocicorp.dev/">Zero</a>,
-              <a href="https://electric-sql.com/">Electric</a>,
+              <a href="https://electric.ax/">Electric</a>,
               <a href="https://www.powersync.com/">PowerSync</a> — and the Postgres that
               comes with it. <a href="vs.html">Here's an honest comparison ↗</a>
             </p>
@@ -362,13 +364,18 @@
             <div class="art__row">
               <a class="art__name" href="https://github.com/cloudflare/partykit/tree/main/packages/partysync">partysync</a>
               <p class="art__note">
-                Cloudflare's own. Whole-state over WebSocket, and on offline support it
-                says: <em>"maybe won't do."</em> This does. That's the whole pitch.
+                Cloudflare's own, and the closest thing to this. Delta sync over a
+                WebSocket, with an IndexedDB read cache — so it shows last-known state
+                offline, it just has no write queue. Its README files that under a
+                heading called <em>"Maybe won't do."</em> This does it.
               </p>
             </div>
             <div class="art__row">
               <a class="art__name" href="https://github.com/aspen-cloud/triplit">Triplit</a>
-              <p class="art__note">Had a Durable Object adapter. Abandoned in 2025 — but worth reading.</p>
+              <p class="art__note">
+                Had a Durable Object adapter. Unmaintained since September 2025 — not
+                archived, but nothing merged or released since. Still worth reading.
+              </p>
             </div>
             <div class="art__row">
               <a class="art__name" href="https://yjs.dev/">Yjs</a>

@@ -10,19 +10,22 @@ npm i durable-sync
 **[Docs and a live demo →](https://isaacrowntree.com/durable-sync/)** ·
 [vs Zero, Electric, PowerSync](https://isaacrowntree.com/durable-sync/vs.html)
 
-Cloudflare's own experimental `partysync` says of offline support:
-*"maybe won't do."* This does. That's the whole pitch.
+Cloudflare's own experimental `partysync` files offline support under a README
+heading called *"Maybe won't do."* This does it. That's the whole pitch.
 
 ---
 
 ## Why this exists
 
-If you want offline-first sync in 2026, the credible options — Zero, Electric,
+If you want offline-first sync in 2026, the credible options — Electric,
 PowerSync, InstantDB — all want **Postgres and a long-running container**. On
-an all-Cloudflare stack that's a second backend, forever. Triplit was the one
-engine with a Durable Object adapter, and it was
-[acquired and abandoned](https://supabase.com/blog/triplit-joins-supabase)
-(no commits since September 2025, docs site offline).
+an all-Cloudflare stack that's a second backend, forever. (Zero wants both too,
+and [doesn't do offline writes](https://zero.rocicorp.dev/docs/offline) at all —
+"Zero is not local-first," in its own words.) Triplit was the one engine with a
+Durable Object adapter; its co-founder
+[joined Supabase](https://supabase.com/blog/triplit-joins-supabase) in October
+2025 and it has sat unmaintained since — no commits since September 2025, docs
+site offline.
 
 Meanwhile the platform already gives you the hard part for free: **a Durable
 Object is a single-threaded ordering point, per user.** That's what everyone
@@ -214,7 +217,7 @@ Being clear so you don't adopt it and find out:
   pretending otherwise would be a lie.
 
 If you need any of those, you want a real sync engine —
-[Zero](https://zero.rocicorp.dev/), [Electric](https://electric-sql.com/),
+[Zero](https://zero.rocicorp.dev/), [Electric](https://electric.ax/),
 [PowerSync](https://www.powersync.com/) — and the Postgres that comes with it.
 
 ## Who uses it
@@ -231,9 +234,11 @@ applying one does to its database — and this package owns the transport.
 ## Prior art
 
 - **[partysync](https://github.com/cloudflare/partykit/tree/main/packages/partysync)**
-  — Cloudflare's own; whole-state over WebSocket, explicitly punts on offline.
+  — Cloudflare's own, and the closest thing to this: delta sync over a WebSocket
+  with an IndexedDB read cache, so it survives a refresh offline. What it has no
+  answer for is a write made while disconnected. Read it before you read this.
 - **[Triplit](https://github.com/aspen-cloud/triplit)** — had a DO adapter;
-  abandoned 2025. Worth reading.
+  unmaintained since Sept 2025. Worth reading.
 - **[Yjs](https://yjs.dev/) / [Automerge](https://automerge.org/)** — real CRDTs.
   Use these if you genuinely need merge.
 

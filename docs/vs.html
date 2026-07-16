@@ -100,14 +100,14 @@
                 <tr>
                   <th scope="row">partysync</th>
                   <td>A Durable Object. Nothing else.</td>
-                  <td class="no">No — "maybe won't do"</td>
-                  <td>Whole-state replacement</td>
+                  <td class="no">No write queue — read cache only</td>
+                  <td>Delta sync; the DO serializes writes</td>
                   <td class="yes">Yes — WebSocket</td>
                 </tr>
                 <tr>
                   <th scope="row">Zero</th>
                   <td>Postgres + zero-cache</td>
-                  <td>Partial — mutations queue locally</td>
+                  <td class="no">No — an explicit non-goal</td>
                   <td class="yes">Server-authoritative mutators</td>
                   <td class="yes">Yes</td>
                 </tr>
@@ -120,13 +120,13 @@
                 </tr>
                 <tr>
                   <th scope="row">PowerSync</th>
-                  <td>Postgres/Mongo/MySQL + service</td>
-                  <td class="yes">Yes — its main pitch</td>
-                  <td class="yes">Yes</td>
+                  <td>Postgres/Mongo/MySQL/MSSQL + service</td>
+                  <td class="yes">Yes — first-class</td>
+                  <td>Backend-delegated; last-write-wins default</td>
                   <td class="yes">Yes</td>
                 </tr>
                 <tr>
-                  <th scope="row">Triplit</th>
+                  <th scope="row">Triplit <em>(unmaintained)</em></th>
                   <td>Its own server (had a DO adapter)</td>
                   <td class="yes">Yes</td>
                   <td class="yes">Yes</td>
@@ -144,10 +144,14 @@
           </div>
 
           <p style="margin-top: 1rem; font-family: var(--mono); font-size: 0.72rem; color: var(--dimmer); max-width: none">
-            Checked July 2026. These projects move fast and this table is written by
-            someone with an obvious interest — if a row is wrong or out of date,
+            Checked against primary docs, July 2026. These projects move fast and this
+            table is written by someone with an obvious interest — if a row is wrong or
+            out of date,
             <a href="https://github.com/isaacrowntree/durable-sync/issues">open an issue</a>
-            and it gets fixed.
+            and it gets fixed. Neither "conflict resolution" nor "offline writes" is one
+            capability: PowerSync queues writes and hands them to your backend to
+            arbitrate, Zero reconciles on an authoritative server, and a CRDT merges
+            without one. A column can only ever be a pointer to the real docs.
           </p>
         </section>
 
@@ -163,6 +167,14 @@
             resolution, partial sync of a large dataset, or instant cross-device updates.
             They are mature, staffed, and genuinely better engineered for the general
             case. This library does not compete with them and isn't trying to.
+          </p>
+          <p>
+            One caveat on that list: <strong>Zero rejects writes while disconnected</strong>
+            and describes itself as "not local-first," so if offline is the requirement
+            it's out regardless of what you're willing to run. And PowerSync — the one
+            that does offline properly — resolves conflicts by handing the write queue to
+            <em>your</em> backend, defaulting to last-write-wins. Which is the same shape
+            as the answer here, with a Postgres and a service under it.
           </p>
 
           <h3 style="margin-bottom: 0.5rem">Use Yjs or Automerge if…</h3>
