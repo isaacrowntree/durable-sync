@@ -1,0 +1,14 @@
+{
+  // Config for the integration suite only — never published (see package.json
+  // `files`). The compatibility date is pinned, not floating: it must stay
+  // within the window of the workerd that @cloudflare/vitest-pool-workers
+  // bundles, and a date newer than the binary refuses to boot. Bump it and the
+  // pool version together, never on their own.
+  "name": "journal-integration",
+  "main": "worker.ts",
+  "compatibility_date": "2026-01-01",
+  "durable_objects": {
+    "bindings": [{ "name": "JOURNAL", "class_name": "Journal" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Journal"] }]
+}

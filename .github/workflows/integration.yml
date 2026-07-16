@@ -1,0 +1,22 @@
+name: integration
+
+# Opt-in only. Booting workerd and running the journal inside a real Durable
+# Object is an order of magnitude slower than the unit suite, so this never
+# runs on push or pull_request — the always-on `ci` workflow covers those.
+#
+# Run it by hand from the Actions tab, or:
+#   gh workflow run integration.yml
+on: workflow_dispatch
+
+jobs:
+  durable-object:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # Node 22: the workers pool pulls in sharp, whose prebuilt binaries
+          # don't yet cover the newest Node. This is the version `ci` uses too.
+          node-version: 22
+      - run: npm ci
+      - run: npm run test:integration
