@@ -158,7 +158,10 @@ export function createTransport(opts: TransportOptions) {
           // and never makes progress.
         }
       }
-      await cursor.write({ seq: body.seq ?? since, epoch });
+      // Keep the epoch we know when a reply omits one — writing `undefined`
+      // would make the next reply that HAS one look like a new generation and
+      // trigger a needless full replay.
+      await cursor.write({ seq: body.seq, epoch: epoch ?? current.epoch });
       return { ok: true, applied };
     } catch {
       return { ok: false, applied: 0 };

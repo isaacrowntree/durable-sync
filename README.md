@@ -27,7 +27,7 @@ else needs Postgres for.
 
 So this is small on purpose:
 
-- **~350 lines.** It is a primitive, not a database.
+- **Small on purpose.** It is a primitive, not a database.
 - **No conflict resolution, deliberately.** Ops are immutable facts appended to
   a log. If two clients edit the same record and you need a merge, you want a
   CRDT — use Yjs or Automerge. If your writes are *events* ("this happened"),
@@ -110,7 +110,9 @@ export const sync = createSync({
   canPull: async () => !(await somethingInProgress()),
 });
 
-sync.start();   // wire lifecycle triggers; returns stop()
+// Wire the lifecycle triggers. Call this from an effect, not at module scope —
+// it returns a stop function, and there's nothing to listen to during SSR.
+useEffect(() => sync.start(), []);
 ```
 
 Writing is local-first: commit to IndexedDB, queue the op, let the network
@@ -119,8 +121,11 @@ catch up.
 ```ts
 await db.notes.put(note);
 await sync.enqueue({ opId: note.id, kind: "note", payload: note });
-void sync.now();          // best-effort; never await this on a user path
+void sync.now({ force: true });   // best-effort; never await this on a user path
 ```
+
+`force` skips the throttle — a write that just happened shouldn't wait out a
+foregrounding window. It does **not** skip `canWrite`.
 
 ### The outbox must be durable
 
@@ -143,18 +148,23 @@ const dexieOutbox = (table) => ({
 snapshot is referentially stable between changes.
 
 ```tsx
-const state = useSyncExternalStore(sync.subscribe, sync.getState, () => ({}));
+const state = useSyncExternalStore(sync.subscribe, sync.getState, sync.getServerState);
 // { lastOkAt?: number, lastError?: string }
 ```
+
+Use `sync.getServerState` — an inline `() => ({})` returns a fresh object every
+call and React throws *"The result of getServerSnapshot should be cached to
+avoid an infinite loop."*
 
 Ship this. Every failure path here is a silent catch — offline, a 500, an
 expired session — because none of them should interrupt the user. The cost is
 that "synced" and "silently broken for a week" look identical. This row is the
 only thing that tells them apart.
 
-## The three things this gets right that are easy to get wrong
+## The four things this gets right that are easy to get wrong
 
-These are the reason the package exists; each one is a bug that shipped.
+These are the reason the package exists. Each one is a bug that shipped, in
+production, in the app this was extracted from.
 
 **1. `res.ok` is not evidence.** Behind an auth proxy (Cloudflare Access and
 friends), an expired session redirects to a *same-origin* login page — which
@@ -173,6 +183,14 @@ progress, `canPull()` defers it. In the app this was extracted from, a pull
 mid-workout rewrote the working weight that the finish logic reads back — and
 silently dropped a 5×5 to 3×5. Pushing is always safe; pulling isn't.
 
+**4. The gate has to be the only door.** `canWrite()` exists because the journal
+is addressed by a *server-side* identity while the ops carry whatever the client
+selected — so writing as the wrong one files data under someone else,
+permanently, in an append-only log. The same app had that gate on the engine and
+a caller that reached past it straight to the transport: valid ack, outbox
+drained, only copy gone. That's why the transport isn't exported here. There is
+one way in.
+
 ## What this does not do
 
 Being clear so you don't adopt it and find out:
@@ -184,6 +202,11 @@ Being clear so you don't adopt it and find out:
   foreground — not instantly. That's the trade for working in a basement.
 - **No auth.** Put it behind whatever you already use. The DO is addressed by
   whatever key you choose; that key is your isolation boundary.
+- **One instance per identity.** `createSync` is single-tenant: the in-flight
+  guard and the throttle live in the closure. If your app has several identities
+  on one device, create one instance per identity and memoize it — a fresh
+  instance per render resets the throttle that exists to collapse the
+  foregrounding burst.
 - **Nothing runs while the app is closed.** Safari has no Background Sync, and
   pretending otherwise would be a lie.
 

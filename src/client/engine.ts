@@ -45,9 +45,15 @@ const DEFAULT_MIN_INTERVAL = 10_000;
 const DEFAULT_POLL = 5 * 60_000;
 const UNREACHABLE = "Couldn't reach the sync journal";
 
+export interface SyncNowOptions {
+  /** Skip the throttle — for a write that just happened and shouldn't wait
+   * out a foregrounding window. Never skips canWrite(). */
+  force?: boolean;
+}
+
 export interface Sync {
   /** Push, then pull unless canPull() says no. Never throws. */
-  now(): Promise<number>;
+  now(opts?: SyncNowOptions): Promise<number>;
   /** Queue an op locally. Durable, no network — safe to await on a write path. */
   enqueue(op: { opId: string; kind: string; payload: unknown }): Promise<void>;
   /** Wire the lifecycle triggers. Returns a stop function. */
@@ -56,7 +62,15 @@ export interface Sync {
    * between changes — returning a fresh object each call spins React. */
   subscribe(onChange: () => void): () => void;
   getState(): SyncState;
+  /** The server snapshot for useSyncExternalStore. Nothing has synced during
+   * SSR, and this MUST be referentially stable or React throws
+   * "The result of getServerSnapshot should be cached to avoid an infinite
+   * loop." Pass it as the third argument; never an inline `() => ({})`. */
+  getServerState(): SyncState;
 }
+
+/** Frozen and shared: see getServerState. */
+const SERVER_STATE: SyncState = Object.freeze({});
 
 export function createSync(opts: SyncOptions): Sync {
   const {
@@ -116,10 +130,13 @@ export function createSync(opts: SyncOptions): Sync {
     return pulled.applied;
   }
 
-  async function syncNow(): Promise<number> {
+  async function syncNow(opts: SyncNowOptions = {}): Promise<number> {
+    // The gate is checked first and force never skips it: filing one identity's
+    // ops under another is unrecoverable, and the ack looks successful enough
+    // to drain the outbox against it.
     if (!(await canWrite())) return 0;
     if (inFlight) return inFlight;
-    if (now() - lastRunAt < minIntervalMs) return 0;
+    if (!opts.force && now() - lastRunAt < minIntervalMs) return 0;
     // navigator.onLine is trustworthy only as a NEGATIVE — a dead zone with
     // full bars still reports true — so it's worth exactly this one check.
     if (typeof navigator !== "undefined" && navigator.onLine === false) return 0;
@@ -134,12 +151,16 @@ export function createSync(opts: SyncOptions): Sync {
   }
 
   function start(): () => void {
+    // No document/window during SSR — and the caller may well be a module that
+    // gets evaluated on the server.
+    if (typeof document === "undefined" || typeof window === "undefined") {
+      return () => {};
+    }
+
     void syncNow(); // mount is still a real trigger: iOS cold-launches often
 
     const onVisible = () => {
-      if (typeof document === "undefined" || document.visibilityState === "visible") {
-        void syncNow();
-      }
+      if (document.visibilityState === "visible") void syncNow();
     };
     // A tab restored from the bfcache doesn't fire visibilitychange.
     const onPageShow = (e: Event) => {
@@ -170,5 +191,6 @@ export function createSync(opts: SyncOptions): Sync {
       return () => void listeners.delete(onChange);
     },
     getState: () => snapshot,
+    getServerState: () => SERVER_STATE,
   };
 }

@@ -159,3 +159,53 @@ describe("state", () => {
     expect(sync.getState()).toBe(b);
   });
 });
+
+/** The gate must be unbypassable. In the app this was extracted from, the
+ * identity gate lived on the engine while a caller reached past it to the
+ * transport — and posted one user's workouts to another's journal, got a valid
+ * ack, and drained the outbox. The only copy of the write was gone. So: the
+ * transport is not public, and the gate is the only door. */
+describe("the identity gate cannot be bypassed", () => {
+  it("does not push when canWrite() is false", async () => {
+    const fetchMock = vi.fn(async () => ok());
+    vi.stubGlobal("fetch", fetchMock);
+    const { sync } = make({ canWrite: () => false });
+    await sync.enqueue({ opId: "a", kind: "put", payload: {} });
+
+    await sync.now();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("force does not open the gate", async () => {
+    const fetchMock = vi.fn(async () => ok());
+    vi.stubGlobal("fetch", fetchMock);
+    const { sync } = make({ canWrite: () => false });
+
+    await sync.now({ force: true });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+/** A write must reach the journal promptly even if a sync just ran — the
+ * throttle exists to collapse a foregrounding burst, not to delay the push
+ * that follows finishing something. */
+describe("force", () => {
+  it("bypasses the throttle so a just-finished write isn't held back", async () => {
+    const fetchMock = vi.fn(async () => ok());
+    vi.stubGlobal("fetch", fetchMock);
+    const t = { value: 1_000_000 };
+    const { sync } = make({ minIntervalMs: 10_000 }, t);
+
+    await sync.now();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    t.value += 100; // well inside the throttle window
+    await sync.now();
+    expect(fetchMock).toHaveBeenCalledTimes(1); // throttled, as designed
+
+    await sync.now({ force: true });
+    expect(fetchMock).toHaveBeenCalledTimes(2); // but a forced push gets through
+  });
+});
