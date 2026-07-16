@@ -18,7 +18,7 @@ Install: `npm i durable-sync`. Two entry points: `durable-sync/server` and `dura
 
 ## Server API (`durable-sync/server`)
 
-- `SyncJournal` — extend and export from your Worker. Routes, reachable only through a binding: `POST /push` → `{ seq, accepted, stored }`; `GET /pull?since=N[&snapshot=1]` → `{ ops, seq, epoch, snapshot? }`; `PUT /snapshot` `{ seq, epoch, blob }` → `{ ok, seq }`; `GET /ops?kind=K` → `{ ops }`; `DELETE /reset` → `{ cleared, epoch }`.
+- `SyncJournal extends DurableObject` (from `cloudflare:workers`) — extend and export from your Worker. Its methods are Durable Object RPC, called on the stub, reachable only from your own Worker: `push(ops)` → `{ seq, accepted, stored }`; `pull(since, withSnapshot?)` → `{ ops, seq, epoch, snapshot? }`; `putSnapshot({ seq, epoch, blob })` → `{ ok, seq }`; `opsByKind(kind)` → `{ ops }`; `reset()` → `{ cleared, epoch }`. A client reaches exactly the methods you forward from an HTTP route; `reset()` stays private by never being routed. There is no `fetch` router on the DO.
 - `SqlOpStore`, `MemoryOpStore` — implementations of `OpStore`.
 - `handlePush`, `handlePull`, `handleReset`, `handleOpsByKind`, `handleSnapshot` — the pure logic, testable without a Workers runtime.
 - Address one instance per user: `ns.get(ns.idFromName(userKey))`.

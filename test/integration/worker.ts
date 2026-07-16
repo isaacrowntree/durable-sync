@@ -1,33 +1,38 @@
-/** A Worker that forwards every request straight to one journal DO.
+/** A Worker that maps HTTP to the journal's RPC methods.
  *
- * Deliberately unlike the README's route handler: it exposes DELETE and every
- * other method, because the whole point of this suite is to exercise the DO's
- * real routing and real SQLite — not to model a safe public surface. It tests
- * `src`, so a regression is caught before a publish rather than after. */
+ * This is exactly what a consumer writes — a route handler per method — so the
+ * suite exercises the real path a client takes: HTTP into the Worker, RPC into
+ * the DO. Deliberately unsafe: it also exposes reset, because the point here is
+ * to reach every method, not to model a safe public surface. It tests `src`, so
+ * a regression is caught before a publish. */
 import { SyncJournal } from "../../src/server/index.js";
 
 export class Journal extends SyncJournal {}
 
-/** The slice of the binding we use, typed locally so this file needs no
- * `@cloudflare/workers-types` (and it isn't covered by the src typecheck). */
 interface Env {
-  JOURNAL: {
-    idFromName(name: string): unknown;
-    get(id: unknown): { fetch(request: Request): Promise<Response> };
-  };
+  JOURNAL: DurableObjectNamespace<Journal>;
 }
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
-    const stub = env.JOURNAL.get(env.JOURNAL.idFromName("lifter"));
-    const hasBody = req.method !== "GET" && req.method !== "DELETE";
-    return stub.fetch(
-      new Request(`https://journal${url.pathname}${url.search}`, {
-        method: req.method,
-        headers: { "content-type": "application/json" },
-        body: hasBody ? await req.text() : undefined,
-      }),
-    );
+    const journal = env.JOURNAL.get(env.JOURNAL.idFromName("lifter"));
+    const json = <T>(value: T) => Response.json(value);
+
+    if (req.method === "POST") {
+      const { ops } = (await req.json()) as { ops: Parameters<Journal["push"]>[0] };
+      return json(await journal.push(ops));
+    }
+    if (req.method === "PUT") {
+      return json(await journal.putSnapshot((await req.json()) as never));
+    }
+    if (req.method === "DELETE") {
+      return json(await journal.reset());
+    }
+    if (url.pathname === "/ops") {
+      return json(await journal.opsByKind(url.searchParams.get("kind") ?? ""));
+    }
+    const since = Number(url.searchParams.get("since") ?? 0) || 0;
+    return json(await journal.pull(since, url.searchParams.get("snapshot") === "1"));
   },
 };

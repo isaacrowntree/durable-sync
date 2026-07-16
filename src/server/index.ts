@@ -16,4 +16,4 @@ export {
   type SqlLike,
 } from "./journal.js";
 
-export { SyncJournal, type JournalState } from "./durable-object.js";
+export { SyncJournal } from "./durable-object.js";

@@ -55,10 +55,10 @@ So this is small on purpose:
 ## Server
 
 ```ts
-// worker.ts
+// worker.ts — extend the Durable Object and export it.
 import { SyncJournal } from "durable-sync/server";
 export class Journal extends SyncJournal {}
-export default handler;
+export default { fetch /* your routes — see below */ };
 ```
 
 ```jsonc
@@ -70,42 +70,42 @@ export default handler;
 ```
 
 One instance per user is the whole design — `idFromName(userKey)` gives you
-serialized writes and natural isolation, for free:
+serialized writes and natural isolation, for free. The journal's methods are
+Durable Object RPC: you call them on the stub, typed, with no request-building
+in between.
 
 ```ts
-// app/api/sync/route.ts
+// The route your client hits. Forward each method you want a client to reach.
+const journalFor = (req: Request) =>
+  env.JOURNAL.get(env.JOURNAL.idFromName(userKeyFrom(req)));
+
 export async function POST(req: Request) {
-  const journal = journalFor(req);           // ns.get(ns.idFromName(userEmail))
-  return journal.fetch("https://journal/push", {
-    method: "POST",
-    body: await req.text(),
-    headers: { "content-type": "application/json" },
-  });
+  const { ops } = await req.json();
+  return Response.json(await journalFor(req).push(ops));
 }
 
 export async function GET(req: Request) {
-  const journal = journalFor(req);
   const q = new URL(req.url).searchParams;
-  const since = q.get("since") ?? "0";
-  // Forward `snapshot` too, or the client asks for a fold and never gets one —
-  // which costs a slow cold start, not a wrong one.
-  const snap = q.get("snapshot") === "1" ? "&snapshot=1" : "";
-  return journal.fetch(`https://journal/pull?since=${encodeURIComponent(since)}${snap}`);
+  const since = Number(q.get("since") ?? 0) || 0;
+  // Ask for the fold on a cold start, or a new device replays the whole log.
+  const withSnapshot = q.get("snapshot") === "1";
+  return Response.json(await journalFor(req).pull(since, withSnapshot));
 }
 
 // Only if you're using snapshots.
 export async function PUT(req: Request) {
-  const journal = journalFor(req);
-  return journal.fetch("https://journal/snapshot", {
-    method: "PUT",
-    body: await req.text(),
-    headers: { "content-type": "application/json" },
-  });
+  return Response.json(await journalFor(req).putSnapshot(await req.json()));
 }
 ```
 
-Note what you did **not** route: `DELETE` (reset). The DO serves it, but it's
-only reachable through the binding — export exactly what you want public.
+Note what you did **not** forward: `reset()`. The DO has it — it's the escape
+hatch for an append-only log — but a client can reach exactly the methods you
+wire to a route and nothing else. That's the whole access model: no router in
+the DO deciding for you, just the routes you write.
+
+There's a runnable version of all of this in
+[`examples/notes`](examples/notes) — a Worker plus a browser client with a real
+IndexedDB outbox. `npm install && npm run dev`.
 
 ## Client
 

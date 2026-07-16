@@ -1,0 +1,16 @@
+{
+  "name": "durable-sync-notes-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "postinstall": "node scripts/copy-lib.mjs",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "durable-sync": "^0.3.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.103.0"
+  }
+}

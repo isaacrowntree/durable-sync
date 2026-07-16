@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>durable-sync · offline notes</title>
+    <style>
+      :root {
+        --bg: #0b1020;
+        --surface: #141d33;
+        --rule: #253150;
+        --text: #ccd6ee;
+        --dim: #7285a9;
+        --acked: #4fd1c5;
+        --pending: #e8a33d;
+        --broken: #f2555a;
+        color-scheme: dark;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--text);
+        font: 15px/1.55 ui-sans-serif, system-ui, sans-serif;
+        display: flex;
+        justify-content: center;
+        padding: 2rem 1rem;
+      }
+      main { width: 100%; max-width: 30rem; }
+      header { display: flex; align-items: baseline; gap: 0.6rem; margin-bottom: 0.25rem; }
+      h1 { font-size: 1.25rem; margin: 0; letter-spacing: -0.02em; }
+      h1 b { color: var(--acked); font-weight: 700; }
+      .sub { color: var(--dim); font-size: 0.85rem; margin: 0 0 1.25rem; }
+      .bar { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+      button, input {
+        font: inherit;
+        border-radius: 8px;
+        border: 1px solid var(--rule);
+        background: var(--surface);
+        color: var(--text);
+        padding: 0.55rem 0.7rem;
+      }
+      input { flex: 1; }
+      input:focus-visible, button:focus-visible { outline: 2px solid var(--acked); outline-offset: 2px; }
+      form { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; }
+      .add-btn { background: var(--acked); color: #04201d; border-color: var(--acked); font-weight: 600; cursor: pointer; }
+      .chip { cursor: pointer; font-size: 0.82rem; color: var(--dim); }
+      #net[data-online="false"] { color: var(--broken); border-color: var(--broken); }
+      #net[data-online="true"] { color: var(--acked); }
+      .status { font-size: 0.8rem; padding: 0.45rem 0.7rem; border-radius: 8px; border: 1px solid var(--rule); margin-bottom: 0.35rem; }
+      .status[data-state="ok"] { color: var(--acked); }
+      .status[data-state="error"] { color: var(--broken); }
+      #queued { font-size: 0.75rem; color: var(--dim); text-align: right; margin-bottom: 1rem; }
+      #queued[data-pending="true"] { color: var(--pending); }
+      ul { list-style: none; margin: 0; padding: 0; }
+      li { display: flex; justify-content: space-between; gap: 1rem; padding: 0.6rem 0.1rem; border-bottom: 1px solid var(--rule); }
+      li time { color: var(--dim); font-size: 0.75rem; white-space: nowrap; }
+      li.empty { color: var(--dim); border: 0; padding: 1.2rem 0; }
+      footer { margin-top: 1.5rem; color: var(--dim); font-size: 0.78rem; }
+      a { color: var(--acked); }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header><h1><b>durable</b>-sync</h1> <span class="sub">offline notes</span></header>
+      <p class="sub">
+        Add a note, hit <b>Offline</b>, add more — they queue. Go back online and the
+        outbox drains to the Durable Object.
+      </p>
+
+      <div class="bar">
+        <button id="net" class="chip" data-online="true" type="button">◉ Online</button>
+        <button id="fold" class="chip" type="button" title="Fold the log into a snapshot">
+          Fold log
+        </button>
+      </div>
+
+      <form id="add">
+        <input id="text" placeholder="Write a note…" autocomplete="off" />
+        <button class="add-btn" type="submit">Add</button>
+      </form>
+
+      <div id="status" class="status" data-state="idle">not synced yet</div>
+      <div id="queued" data-pending="false">outbox empty</div>
+
+      <ul id="notes"></ul>
+
+      <footer>
+        Writes commit locally first, then sync. The outbox lives in IndexedDB, so a
+        queued note survives a reload while offline. <a href="https://isaacrowntree.com/durable-sync/">How it works →</a>
+      </footer>
+    </main>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

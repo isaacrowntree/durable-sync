@@ -202,20 +202,18 @@
               <pre><code><span class="tok-c">// worker.ts</span>
 <span class="tok-k">import</span> { SyncJournal } <span class="tok-k">from</span> <span class="tok-s">"durable-sync/server"</span>;
 <span class="tok-k">export class</span> Journal <span class="tok-k">extends</span> SyncJournal {}</code></pre>
-              <pre><code><span class="tok-c">// wrangler.jsonc</span>
-{
-  <span class="tok-s">"durable_objects"</span>: {
-    <span class="tok-s">"bindings"</span>: [{ <span class="tok-s">"name"</span>: <span class="tok-s">"JOURNAL"</span>, <span class="tok-s">"class_name"</span>: <span class="tok-s">"Journal"</span> }]
-  },
-  <span class="tok-s">"migrations"</span>: [
-    { <span class="tok-s">"tag"</span>: <span class="tok-s">"v1"</span>, <span class="tok-s">"new_sqlite_classes"</span>: [<span class="tok-s">"Journal"</span>] }
-  ]
+              <pre><code><span class="tok-c">// The journal's methods are DO RPC — call them on the stub, typed.</span>
+<span class="tok-k">export async function</span> <span class="tok-f">POST</span>(req) {
+  <span class="tok-k">const</span> { ops } = <span class="tok-k">await</span> req.<span class="tok-f">json</span>();
+  <span class="tok-k">const</span> journal = env.JOURNAL.<span class="tok-f">get</span>(env.JOURNAL.<span class="tok-f">idFromName</span>(userKey));
+  <span class="tok-k">return</span> Response.<span class="tok-f">json</span>(<span class="tok-k">await</span> journal.<span class="tok-f">push</span>(ops));
 }</code></pre>
               <p style="margin-top: 1rem; font-size: 0.88rem">
-                Then forward <code>POST</code> and <code>GET</code> from your own route.
-                Note what you do <strong>not</strong> route: <code>DELETE</code> (reset).
-                The Durable Object serves it, but it stays reachable only through the
-                binding — expose exactly what you want public.
+                <code>pull</code> and <code>putSnapshot</code> are two more one-liners.
+                Note what you do <strong>not</strong> forward: <code>reset()</code>. The
+                DO has it, but a client reaches exactly the methods you wire to a route —
+                no router in the DO deciding for you. There's a
+                <a href="https://github.com/isaacrowntree/durable-sync/tree/main/examples/notes">runnable example</a>.
               </p>
             </div>
 

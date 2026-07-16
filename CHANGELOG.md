@@ -1,5 +1,54 @@
 # Changelog
 
+## 0.3.0 — 2026-07-16
+
+**Breaking, server only. The client is untouched — no client change is needed.**
+
+`SyncJournal` is now a native Durable Object with typed RPC methods, instead of
+a class with a `fetch` router. You call the journal the way you call any DO —
+`await journal.push(ops)` — with no request-building, no string paths, and a
+return type the compiler knows.
+
+### Why
+
+The old surface routed by HTTP method and pathname inside the DO. That put a
+router between your Worker and the log that you didn't write and couldn't see,
+and it leaned on `Request`/`Response` for a hop that never leaves your own
+isolate. RPC is what that hop is for: the call is a method call, the access
+model is just "a client reaches the methods you forward from a route," and
+`reset()` is private because nothing routes to it — not because a router
+special-cases `DELETE`.
+
+### Migrate
+
+`SyncJournal` now extends `DurableObject` from `cloudflare:workers`, so its
+constructor takes `(ctx, env)` — which is what the runtime already passes a DO.
+If you wrote `export class Journal extends SyncJournal {}` and nothing else, you
+don't touch the class.
+
+Your route handler changes from forwarding a `Request` to calling a method:
+
+```ts
+// before
+return journal.fetch("https://journal/push", { method: "POST", body, headers });
+// after
+return Response.json(await journal.push(ops));
+```
+
+The four routes map to `push(ops)`, `pull(since, withSnapshot?)`,
+`putSnapshot({ seq, epoch, blob })`, and `opsByKind(kind)`. `reset()` is there
+too — don't route it. The removed `JournalState` type is gone; the DO takes the
+real `DurableObjectState`.
+
+The **wire protocol between client and server is unchanged** — same JSON on the
+same routes — so a 0.3 server and a 0.2 client interoperate. Only the
+Worker↔DO code shape moved.
+
+### Also
+
+- A runnable example: [`examples/notes`](examples/notes), a Worker plus a
+  browser client with a real IndexedDB outbox, verified end to end.
+
 ## 0.2.0 — 2026-07-16
 
 A silent-loss fix that needs no migration, and snapshots, which are opt-in.
