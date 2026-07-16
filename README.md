@@ -7,6 +7,9 @@ the server, an outbox on the client. No Postgres, no container, no WebSocket.
 npm i durable-sync
 ```
 
+**[Docs and a live demo →](https://isaacrowntree.com/durable-sync/)** ·
+[vs Zero, Electric, PowerSync](https://isaacrowntree.com/durable-sync/vs.html)
+
 Cloudflare's own experimental `partysync` says of offline support:
 *"maybe won't do."* This does. That's the whole pitch.
 

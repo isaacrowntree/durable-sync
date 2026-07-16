@@ -72,7 +72,7 @@
 
     <main>
       <div class="shell">
-        <section class="hero">
+        <section class="hero hero--split">
           <div class="hero__pitch">
             <p class="eyebrow">A primitive, not a database</p>
             <h1>Offline-first sync for Cloudflare Durable&nbsp;Objects</h1>
@@ -102,30 +102,30 @@
             <h2 id="demo-h" class="eyebrow">The whole idea, running</h2>
 
             <div class="journal">
-            <div class="journal__bar">
-              <span>Journal</span>
-              <div class="journal__controls">
-                <button type="button" class="jbtn" id="write">Write an op</button>
-                <button type="button" class="jbtn" id="net" data-online="true" aria-pressed="false">
-                  <span class="jbtn__dot" aria-hidden="true"></span>
-                  <span id="net-label">Online</span>
-                </button>
+              <div class="journal__bar">
+                <span>Journal</span>
+                <div class="journal__controls">
+                  <button type="button" class="jbtn" id="write">Write an op</button>
+                  <button type="button" class="jbtn" id="net" data-online="true" aria-pressed="false">
+                    <span class="jbtn__dot" aria-hidden="true"></span>
+                    <span id="net-label">Online</span>
+                  </button>
+                </div>
+              </div>
+
+              <div class="journal__pane journal__pane--log" id="log" role="log" aria-live="polite" aria-label="Acknowledged ops">
+                <p class="journal__empty" id="log-empty">Nothing acknowledged yet.</p>
+              </div>
+
+              <div class="journal__split">
+                <span>Outbox</span>
+                <b id="outbox-count">0 queued</b>
+              </div>
+
+              <div class="journal__pane journal__pane--outbox" id="outbox" aria-live="polite" aria-label="Pending ops">
+                <p class="journal__empty" id="outbox-empty">Empty. Every write has landed.</p>
               </div>
             </div>
-
-            <div class="journal__pane journal__pane--log" id="log" role="log" aria-live="polite" aria-label="Acknowledged ops">
-              <p class="journal__empty" id="log-empty">Nothing acknowledged yet.</p>
-            </div>
-
-            <div class="journal__split">
-              <span>Outbox</span>
-              <b id="outbox-count">0 queued</b>
-            </div>
-
-            <div class="journal__pane journal__pane--outbox" id="outbox" aria-live="polite" aria-label="Pending ops">
-              <p class="journal__empty" id="outbox-empty">Empty. Every write has landed.</p>
-            </div>
-          </div>
 
             <p class="journal__note">
               Go offline and keep writing — ops queue with no sequence number,

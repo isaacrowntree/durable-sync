@@ -233,6 +233,10 @@ code {
 
 .hero {
   padding: clamp(2.5rem, 5.5vw, 3.75rem) 0 clamp(3rem, 6vw, 4.5rem);
+}
+
+/* Only the landing hero pairs the pitch with the live log. */
+.hero--split {
   display: grid;
   gap: 2.75rem;
   align-items: start;
@@ -241,7 +245,7 @@ code {
 /* Wide enough for the log to sit beside the pitch — which is the point. Both
    the claim and the proof, above the fold, at once. */
 @media (min-width: 1040px) {
-  .hero {
+  .hero--split {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1.12fr);
     gap: 3.5rem;
   }
@@ -455,12 +459,40 @@ code {
 .op {
   display: grid;
   grid-template-columns: 3.4rem 9.5rem 1fr auto;
+  grid-template-areas: "seq kind body state";
   align-items: baseline;
   gap: 0.9rem;
   padding: 0.3rem 0.9rem;
   font-family: var(--mono);
   font-size: 0.78rem;
   white-space: nowrap;
+}
+
+.op__seq {
+  grid-area: seq;
+}
+.op__kind {
+  grid-area: kind;
+}
+.op__body {
+  grid-area: body;
+}
+.op__state {
+  grid-area: state;
+}
+
+/* Four columns need ~280px of fixed track and gap before the payload gets a
+   pixel — on a phone that leaves the op itself unreadable. Drop the payload to
+   its own line and let the seq column span both. */
+@media (max-width: 620px) {
+  .op {
+    grid-template-columns: 2.5rem 1fr auto;
+    grid-template-areas:
+      "seq kind  state"
+      "seq body  body";
+    gap: 0.15rem 0.7rem;
+    padding-block: 0.45rem;
+  }
 }
 
 .op__seq {
@@ -471,12 +503,14 @@ code {
 
 .op__kind {
   color: var(--dim);
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .op__body {
   color: var(--text);
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
