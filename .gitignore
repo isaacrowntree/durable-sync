@@ -2,3 +2,9 @@ node_modules/
 dist/
 *.log
 .DS_Store
+
+# Secrets. Never commit these — this repo is public and an npm token
+# here can publish code to everyone who installs the package.
+.env
+.env.*
+!.env.example
