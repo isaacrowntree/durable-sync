@@ -1,0 +1,50 @@
+{
+  "name": "durable-sync",
+  "version": "0.1.0",
+  "description": "Offline-first sync for Cloudflare Durable Objects: an append-only op log on the server, an outbox on the client.",
+  "license": "MIT",
+  "author": "Isaac Rowntree",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/isaacrowntree/durable-sync.git"
+  },
+  "keywords": [
+    "cloudflare",
+    "durable-objects",
+    "workers",
+    "offline-first",
+    "local-first",
+    "sync",
+    "oplog",
+    "event-sourcing",
+    "indexeddb",
+    "pwa"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js"
+    },
+    "./client": {
+      "types": "./dist/client/index.d.ts",
+      "import": "./dist/client/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run test && npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.4"
+  }
+}
