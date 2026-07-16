@@ -29,9 +29,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          # OIDC needs npm >= 11.5.1 and Node >= 22.14.0.
           node-version: 22
           registry-url: https://registry.npmjs.org
+      # OIDC needs npm >= 11.5.1, and Node 22 ships npm 10.9.x — so setup-node
+      # alone is not enough. Without this npm never attempts OIDC at all: it
+      # falls through to an unauthenticated publish and fails with a confusing
+      # 404 rather than an auth error.
+      - run: npm install -g npm@latest
+      - run: npm --version
       - run: npm ci
       # Publishing an untested build is how a library loses trust once.
       - run: npm run typecheck

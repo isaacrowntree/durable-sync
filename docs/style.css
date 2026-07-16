@@ -89,11 +89,17 @@ h3 {
 }
 
 h1 {
-  font-size: clamp(2.15rem, 1.2rem + 2.4vw, 3.1rem);
+  font-size: clamp(2.05rem, 1.2rem + 2vw, 2.6rem);
   font-stretch: 118%;
   text-transform: uppercase;
   letter-spacing: -0.025em;
-  max-width: 15ch;
+  max-width: 18ch;
+}
+
+/* In the two-column hero the grid track is the constraint — a ch-based
+   max-width here is wider than the track and wraps text straight over the log. */
+.hero__pitch h1 {
+  max-width: none;
 }
 
 h2 {
