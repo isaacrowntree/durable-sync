@@ -1,6 +1,6 @@
 {
   "name": "durable-sync",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Offline-first sync for Cloudflare Durable Objects: an append-only op log on the server, an outbox on the client.",
   "license": "MIT",
   "author": "Isaac Rowntree",
