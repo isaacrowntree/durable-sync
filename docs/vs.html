@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>durable-sync vs Zero, Electric, PowerSync and partysync — an honest comparison</title>
+    <meta
+      name="description"
+      content="How durable-sync compares to Zero, ElectricSQL, PowerSync, Triplit, partysync and CRDTs like Yjs — what each one needs to run, whether it does offline writes, and when you should not use durable-sync."
+    />
+    <link rel="canonical" href="https://isaacrowntree.github.io/durable-sync/vs.html" />
+
+    <meta property="og:type" content="article" />
+    <meta property="og:site_name" content="durable-sync" />
+    <meta property="og:url" content="https://isaacrowntree.github.io/durable-sync/vs.html" />
+    <meta property="og:title" content="durable-sync vs Zero, Electric, PowerSync and partysync" />
+    <meta
+      property="og:description"
+      content="What each sync engine needs to run, whether it does offline writes, and when you should not use durable-sync."
+    />
+    <meta property="og:image" content="https://isaacrowntree.github.io/durable-sync/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <meta name="theme-color" content="#0b1020" />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..800&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+
+  <body>
+    <header class="masthead">
+      <div class="shell masthead__inner">
+        <a class="wordmark" href="./">durable<span>-</span>sync</a>
+        <nav aria-label="Sections">
+          <a href="./#why" class="opt">Why</a>
+          <a href="./#start">Start</a>
+          <a href="./#incidents" class="opt">Incidents</a>
+          <a href="https://github.com/isaacrowntree/durable-sync">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <div class="shell prose">
+        <section class="hero">
+          <p class="eyebrow">Comparison · checked July 2026</p>
+          <h1>durable-sync vs the real sync engines</h1>
+          <p class="hero__lede">
+            Most of the time, one of the others is the right answer.
+            <strong>This page is about the times it isn't.</strong>
+          </p>
+        </section>
+
+        <section aria-labelledby="axis-h" style="border-top: 0; padding-top: 0">
+          <div class="section__head">
+            <p class="eyebrow">The axis that actually decides it</p>
+            <h2 id="axis-h">What does it need running?</h2>
+            <p>
+              Feature checklists move every quarter. The structural question doesn't:
+              every engine below except this one and partysync needs a database and a
+              long-running process to sit in front of it. If you are already paying for
+              Postgres, that cost is zero and you should use one of them — they are
+              better than this at almost everything. If you are all-Cloudflare, it means
+              standing up a second backend and keeping it alive forever.
+            </p>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <caption class="visually-hidden">
+                Sync engines compared by what they need to run, offline write support,
+                conflict resolution and live push
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Engine</th>
+                  <th scope="col">Needs running</th>
+                  <th scope="col">Offline writes</th>
+                  <th scope="col">Conflict resolution</th>
+                  <th scope="col">Live push</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th scope="row">durable-sync</th>
+                  <td>A Durable Object. Nothing else.</td>
+                  <td class="yes">Yes — durable outbox</td>
+                  <td class="no">None, deliberately</td>
+                  <td class="no">No — converges on foreground</td>
+                </tr>
+                <tr>
+                  <th scope="row">partysync</th>
+                  <td>A Durable Object. Nothing else.</td>
+                  <td class="no">No — "maybe won't do"</td>
+                  <td>Whole-state replacement</td>
+                  <td class="yes">Yes — WebSocket</td>
+                </tr>
+                <tr>
+                  <th scope="row">Zero</th>
+                  <td>Postgres + zero-cache</td>
+                  <td>Partial — mutations queue locally</td>
+                  <td class="yes">Server-authoritative mutators</td>
+                  <td class="yes">Yes</td>
+                </tr>
+                <tr>
+                  <th scope="row">Electric</th>
+                  <td>Postgres + Electric service</td>
+                  <td>Read-path sync; writes are yours</td>
+                  <td>Yours to define</td>
+                  <td class="yes">Yes</td>
+                </tr>
+                <tr>
+                  <th scope="row">PowerSync</th>
+                  <td>Postgres/Mongo/MySQL + service</td>
+                  <td class="yes">Yes — its main pitch</td>
+                  <td class="yes">Yes</td>
+                  <td class="yes">Yes</td>
+                </tr>
+                <tr>
+                  <th scope="row">Triplit</th>
+                  <td>Its own server (had a DO adapter)</td>
+                  <td class="yes">Yes</td>
+                  <td class="yes">Yes</td>
+                  <td class="yes">Yes</td>
+                </tr>
+                <tr>
+                  <th scope="row">Yjs / Automerge</th>
+                  <td>A transport you pick</td>
+                  <td class="yes">Yes</td>
+                  <td class="yes">Real CRDT merge</td>
+                  <td>Depends on provider</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <p style="margin-top: 1rem; font-family: var(--mono); font-size: 0.72rem; color: var(--dimmer); max-width: none">
+            Checked July 2026. These projects move fast and this table is written by
+            someone with an obvious interest — if a row is wrong or out of date,
+            <a href="https://github.com/isaacrowntree/durable-sync/issues">open an issue</a>
+            and it gets fixed.
+          </p>
+        </section>
+
+        <section aria-labelledby="use-h">
+          <div class="section__head">
+            <p class="eyebrow">Straight answers</p>
+            <h2 id="use-h">Which one should you use?</h2>
+          </div>
+
+          <h3 style="margin-bottom: 0.5rem">Use PowerSync, Zero or Electric if…</h3>
+          <p>
+            You already run Postgres, or you'd accept running it. You need real conflict
+            resolution, partial sync of a large dataset, or instant cross-device updates.
+            They are mature, staffed, and genuinely better engineered for the general
+            case. This library does not compete with them and isn't trying to.
+          </p>
+
+          <h3 style="margin-bottom: 0.5rem">Use Yjs or Automerge if…</h3>
+          <p>
+            Two people can edit the same thing at the same time and you need the result
+            to merge rather than for one of them to win. That's a CRDT problem, and
+            reaching for anything else is a mistake you'll pay for later.
+          </p>
+
+          <h3 style="margin-bottom: 0.5rem">Use partysync if…</h3>
+          <p>
+            You're all-Cloudflare, you want live updates over a WebSocket, and your users
+            are never offline. It's Cloudflare's own, and it's the better fit whenever
+            offline genuinely doesn't matter.
+          </p>
+
+          <h3 style="margin-bottom: 0.5rem">Use durable-sync if…</h3>
+          <p>
+            You're all-Cloudflare and unwilling to add a second backend, your writes are
+            <strong>events</strong> rather than edits — "this set happened", "this
+            expense was recorded" — and the app has to keep working on a train. That's a
+            narrow slice. Inside it, a Durable Object already gives you a single-threaded
+            ordering point per user, which is the exact thing the others need Postgres
+            for, and the remaining work is an outbox and a cursor. That's this package.
+          </p>
+        </section>
+
+        <section aria-labelledby="honest-h">
+          <div class="section__head">
+            <p class="eyebrow">The catch</p>
+            <h2 id="honest-h">What you give up</h2>
+            <p>
+              A pull returns everything after your cursor in one response — fine for
+              thousands of ops, not for millions. There's no live push, so the other
+              device learns about a write on its next foreground. There's no auth. And
+              nothing runs while the app is closed, because Safari has no Background Sync
+              and pretending otherwise would be a lie.
+            </p>
+            <p>
+              <a href="./#limits">The full list of what it doesn't do →</a>
+            </p>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <footer class="foot-wrap">
+      <div class="shell foot">
+        <span>MIT · Isaac Rowntree</span>
+        <nav aria-label="Elsewhere">
+          <a href="./">Home</a>
+          <a href="https://github.com/isaacrowntree/durable-sync">GitHub</a>
+          <a href="https://www.npmjs.com/package/durable-sync">npm</a>
+        </nav>
+      </div>
+    </footer>
+  </body>
+</html>

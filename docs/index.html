@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>durable-sync — Offline-first sync for Cloudflare Durable Objects</title>
+    <meta
+      name="description"
+      content="Offline-first sync for Cloudflare Durable Objects. An append-only op log on the server, a durable outbox on the client. No Postgres, no container, no WebSocket, zero dependencies."
+    />
+    <link rel="canonical" href="https://isaacrowntree.github.io/durable-sync/" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="durable-sync" />
+    <meta property="og:url" content="https://isaacrowntree.github.io/durable-sync/" />
+    <meta property="og:title" content="durable-sync — Offline-first sync for Cloudflare Durable Objects" />
+    <meta
+      property="og:description"
+      content="An append-only op log on the server, a durable outbox on the client. No Postgres, no container, no WebSocket, zero dependencies."
+    />
+    <meta property="og:image" content="https://isaacrowntree.github.io/durable-sync/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="durable-sync: an op log showing acknowledged ops with sequence numbers above a pending outbox."
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <meta name="theme-color" content="#0b1020" />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..800&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+    />
+    <link rel="stylesheet" href="style.css" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareSourceCode",
+        "name": "durable-sync",
+        "description": "Offline-first sync for Cloudflare Durable Objects: an append-only op log on the server, a durable outbox on the client.",
+        "url": "https://isaacrowntree.github.io/durable-sync/",
+        "codeRepository": "https://github.com/isaacrowntree/durable-sync",
+        "programmingLanguage": "TypeScript",
+        "runtimePlatform": "Cloudflare Workers",
+        "license": "https://opensource.org/licenses/MIT",
+        "author": { "@type": "Person", "name": "Isaac Rowntree" },
+        "keywords": "cloudflare, durable objects, offline-first, local-first, sync engine, op log, event sourcing, indexeddb, pwa"
+      }
+    </script>
+  </head>
+
+  <body>
+    <header class="masthead">
+      <div class="shell masthead__inner">
+        <a class="wordmark" href="/durable-sync/">durable<span>-</span>sync</a>
+        <nav aria-label="Sections">
+          <a href="#why" class="opt">Why</a>
+          <a href="#start">Start</a>
+          <a href="#incidents">Incidents</a>
+          <a href="vs.html" class="opt">Compare</a>
+          <a href="https://github.com/isaacrowntree/durable-sync">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <div class="shell">
+        <section class="hero">
+          <div class="hero__pitch">
+            <p class="eyebrow">A primitive, not a database</p>
+            <h1>Offline-first sync for Cloudflare Durable&nbsp;Objects</h1>
+            <p class="hero__lede">
+              An append-only op log on the server, a durable outbox on the client.
+              <strong>No Postgres, no container, no WebSocket.</strong>
+            </p>
+
+            <div class="hero__actions">
+              <div class="install">
+                <span class="install__prompt" aria-hidden="true">$</span>
+                <span id="install-cmd">npm i durable-sync</span>
+                <button type="button" id="copy" data-copied="false">Copy</button>
+              </div>
+              <a class="ghost-link" href="https://www.npmjs.com/package/durable-sync">View on npm ↗</a>
+            </div>
+
+            <ul class="facts">
+              <li>Zero dependencies</li>
+              <li>42 kB unpacked</li>
+              <li>TypeScript</li>
+              <li>MIT</li>
+            </ul>
+          </div>
+
+          <div class="hero__demo" aria-labelledby="demo-h">
+            <h2 id="demo-h" class="eyebrow">The whole idea, running</h2>
+
+            <div class="journal">
+            <div class="journal__bar">
+              <span>Journal</span>
+              <div class="journal__controls">
+                <button type="button" class="jbtn" id="write">Write an op</button>
+                <button type="button" class="jbtn" id="net" data-online="true" aria-pressed="false">
+                  <span class="jbtn__dot" aria-hidden="true"></span>
+                  <span id="net-label">Online</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="journal__pane journal__pane--log" id="log" role="log" aria-live="polite" aria-label="Acknowledged ops">
+              <p class="journal__empty" id="log-empty">Nothing acknowledged yet.</p>
+            </div>
+
+            <div class="journal__split">
+              <span>Outbox</span>
+              <b id="outbox-count">0 queued</b>
+            </div>
+
+            <div class="journal__pane journal__pane--outbox" id="outbox" aria-live="polite" aria-label="Pending ops">
+              <p class="journal__empty" id="outbox-empty">Empty. Every write has landed.</p>
+            </div>
+          </div>
+
+            <p class="journal__note">
+              Go offline and keep writing — ops queue with no sequence number,
+              because nothing has confirmed them. Come back online and the outbox
+              drains: the journal assigns each op a <code>seq</code>, and only then
+              is it safe to forget locally.
+            </p>
+          </div>
+        </section>
+
+        <section id="why" aria-labelledby="why-h">
+          <div class="section__head">
+            <p class="eyebrow">Why this exists</p>
+            <h2 id="why-h">The platform already gives you the hard part</h2>
+            <p>
+              Every credible offline-first engine — Zero, Electric, PowerSync,
+              InstantDB — wants Postgres and a long-running container. On an
+              all-Cloudflare stack that is a second backend, forever. Triplit had a
+              Durable Object adapter and was
+              <a href="https://supabase.com/blog/triplit-joins-supabase">acquired and abandoned</a>.
+              Meanwhile a Durable Object <strong>is a single-threaded ordering point, per
+              user</strong> — which is the thing everyone else needs Postgres for.
+            </p>
+          </div>
+
+          <ul class="claims">
+            <li>
+              <h3>Small on purpose</h3>
+              <p>It is a primitive, not a database. You bring the storage and the meaning.</p>
+            </li>
+            <li>
+              <h3>No conflict resolution, deliberately</h3>
+              <p>
+                Ops are immutable facts appended to a log. If your writes are events —
+                "this happened" — you don't have a conflict problem. If you genuinely
+                need merge, you want a CRDT.
+              </p>
+            </li>
+            <li>
+              <h3>HTTP, not WebSocket</h3>
+              <p>A socket is useless in a basement. Sync happens when the app is open and the network exists.</p>
+            </li>
+            <li>
+              <h3>Zero dependencies</h3>
+              <p>Bring your own IndexedDB. The package ships two entry points and nothing else.</p>
+            </li>
+          </ul>
+        </section>
+
+        <section id="start" aria-labelledby="start-h">
+          <div class="section__head">
+            <p class="eyebrow">Quickstart</p>
+            <h2 id="start-h">Two halves, one afternoon</h2>
+          </div>
+
+          <div class="steps">
+            <div class="step">
+              <p class="step__label">Server — the log</p>
+              <p>
+                Extend the Durable Object and export it. One instance per user is the
+                whole design: <code>idFromName(userKey)</code> buys serialized writes
+                and natural isolation, for free.
+              </p>
+              <pre><code><span class="tok-c">// worker.ts</span>
+<span class="tok-k">import</span> { SyncJournal } <span class="tok-k">from</span> <span class="tok-s">"durable-sync/server"</span>;
+<span class="tok-k">export class</span> Journal <span class="tok-k">extends</span> SyncJournal {}</code></pre>
+              <pre><code><span class="tok-c">// wrangler.jsonc</span>
+{
+  <span class="tok-s">"durable_objects"</span>: {
+    <span class="tok-s">"bindings"</span>: [{ <span class="tok-s">"name"</span>: <span class="tok-s">"JOURNAL"</span>, <span class="tok-s">"class_name"</span>: <span class="tok-s">"Journal"</span> }]
+  },
+  <span class="tok-s">"migrations"</span>: [
+    { <span class="tok-s">"tag"</span>: <span class="tok-s">"v1"</span>, <span class="tok-s">"new_sqlite_classes"</span>: [<span class="tok-s">"Journal"</span>] }
+  ]
+}</code></pre>
+              <p style="margin-top: 1rem; font-size: 0.88rem">
+                Then forward <code>POST</code> and <code>GET</code> from your own route.
+                Note what you do <strong>not</strong> route: <code>DELETE</code> (reset).
+                The Durable Object serves it, but it stays reachable only through the
+                binding — expose exactly what you want public.
+              </p>
+            </div>
+
+            <div class="step">
+              <p class="step__label">Client — the outbox</p>
+              <p>
+                Commit locally, queue the op, let the network catch up. <code>apply</code>
+                must be idempotent: an op can arrive more than once.
+              </p>
+              <pre><code><span class="tok-k">import</span> { createSync, localStorageCursor }
+  <span class="tok-k">from</span> <span class="tok-s">"durable-sync/client"</span>;
+
+<span class="tok-k">export const</span> sync = <span class="tok-f">createSync</span>({
+  endpoint: <span class="tok-s">"/api/sync"</span>,
+  outbox: <span class="tok-f">dexieOutbox</span>(db.outbox),
+  cursor: <span class="tok-f">localStorageCursor</span>(<span class="tok-s">"myapp.cursor"</span>),
+  stateKey: <span class="tok-s">"myapp.syncState"</span>,
+
+  <span class="tok-c">// Idempotent: an op can arrive twice.</span>
+  <span class="tok-k">async</span> <span class="tok-f">apply</span>(op) {
+    <span class="tok-k">if</span> (op.kind !== <span class="tok-s">"note"</span>) <span class="tok-k">return false</span>;
+    <span class="tok-k">const</span> note = op.payload <span class="tok-k">as</span> Note;
+    <span class="tok-k">if</span> (<span class="tok-k">await</span> db.notes.<span class="tok-f">get</span>(note.id)) <span class="tok-k">return false</span>;
+    <span class="tok-k">await</span> db.notes.<span class="tok-f">put</span>(note);
+    <span class="tok-k">return true</span>;
+  },
+
+  <span class="tok-c">// Pushing is always safe. Pulling might not be.</span>
+  canPull: <span class="tok-k">async</span> () =&gt; !(<span class="tok-k">await</span> <span class="tok-f">inProgress</span>()),
+});</code></pre>
+              <pre><code><span class="tok-c">// Writing is local-first.</span>
+<span class="tok-k">await</span> db.notes.<span class="tok-f">put</span>(note);
+<span class="tok-k">await</span> sync.<span class="tok-f">enqueue</span>({ opId: note.id, kind: <span class="tok-s">"note"</span>, payload: note });
+<span class="tok-k">void</span> sync.<span class="tok-f">now</span>({ force: <span class="tok-k">true</span> }); <span class="tok-c">// never await on a user path</span></code></pre>
+              <p style="margin-top: 1rem; font-size: 0.88rem">
+                The outbox <strong>must be durable</strong>. Until a push is
+                acknowledged it may hold the only copy of a write, and memory does not
+                survive iOS killing a backgrounded PWA. Put it in IndexedDB.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section id="incidents" aria-labelledby="inc-h">
+          <div class="section__head">
+            <p class="eyebrow">Four incidents</p>
+            <h2 id="inc-h">Every one of these shipped to production</h2>
+            <p>
+              These are the reason the package exists. Each is a real bug from the app
+              this was extracted from — and each one looked completely fine from the
+              outside, which is the point.
+            </p>
+          </div>
+
+          <div class="incidents">
+            <article class="incident">
+              <p class="incident__tag">Silent data loss</p>
+              <h3>A 200 that never reached the server</h3>
+              <p>
+                Behind an auth proxy like Cloudflare Access, an expired session
+                redirects to a <em>same-origin</em> login page. <code>fetch</code>
+                follows it and reports <strong>200</strong>. Drain the outbox on
+                <code>res.ok</code> and you delete writes that never landed.
+              </p>
+              <p class="incident__fix">
+                <b>What this does</b>
+                Validates the reply's shape before touching the queue. The outbox only
+                drains against something the journal demonstrably wrote.
+              </p>
+            </article>
+
+            <article class="incident">
+              <p class="incident__tag">Silent stall</p>
+              <h3>A cursor pointing into a log that no longer exists</h3>
+              <p>
+                Reset the log and every client still holds a sequence number from the
+                old one — usually <em>past</em> the rebuilt one. So
+                <code>seq &gt; cursor</code> matches nothing and the client
+                <strong>never syncs again</strong>, quietly, forever.
+              </p>
+              <p class="incident__fix">
+                <b>What this does</b>
+                Every pull carries an <code>epoch</code>. A client that sees a new one
+                replays from zero. <code>apply</code> is idempotent, so replay is cheap.
+              </p>
+            </article>
+
+            <article class="incident">
+              <p class="incident__tag">Silent corruption</p>
+              <h3>A pull that rewrote work in progress</h3>
+              <p>
+                Applying a remote op mid-workout overwrote the working weight that the
+                finish logic reads back — and silently dropped a 5×5 to a 3×5. Pushing
+                is always safe. Pulling is not.
+              </p>
+              <p class="incident__fix">
+                <b>What this does</b>
+                <code>canPull()</code> defers the pull while something is in flight.
+                Eventual consistency makes waiting free.
+              </p>
+            </article>
+
+            <article class="incident">
+              <p class="incident__tag">Unrecoverable</p>
+              <h3>A caller that reached past the gate</h3>
+              <p>
+                The journal is addressed by a <em>server-side</em> identity while ops
+                carry whatever the client selected. Write as the wrong one and the data
+                is filed under someone else — permanently, in an append-only log. The
+                gate was on the engine; a caller went straight to the transport.
+              </p>
+              <p class="incident__fix">
+                <b>What this does</b>
+                The transport isn't exported. <code>canWrite()</code> can't be skipped,
+                not even by <code>force</code>. There is one way in.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="limits" aria-labelledby="lim-h">
+          <div class="section__head">
+            <p class="eyebrow">What this does not do</p>
+            <h2 id="lim-h">Being clear so you don't find out later</h2>
+          </div>
+
+          <ul class="limits">
+            <li><span><b>Conflict resolution.</b> Last writer wins per record, and <code>apply</code> is yours.</span></li>
+            <li><span><b>Pagination.</b> A pull returns everything after the cursor in one response. Fine for thousands of ops; not millions.</span></li>
+            <li><span><b>Live push.</b> No WebSocket, so the other device converges on its next foreground, not instantly.</span></li>
+            <li><span><b>Auth.</b> Put it behind whatever you already use. The key you address the DO with is your isolation boundary.</span></li>
+            <li><span><b>Multi-tenancy per instance.</b> <code>createSync</code> is single-tenant — one instance per identity, memoized.</span></li>
+            <li><span><b>Background sync.</b> Safari has none. Nothing runs while the app is closed, and pretending otherwise would be a lie.</span></li>
+          </ul>
+
+          <div class="escape">
+            <p>
+              If you need any of those, you want a real sync engine —
+              <a href="https://zero.rocicorp.dev/">Zero</a>,
+              <a href="https://electric-sql.com/">Electric</a>,
+              <a href="https://www.powersync.com/">PowerSync</a> — and the Postgres that
+              comes with it. <a href="vs.html">Here's an honest comparison ↗</a>
+            </p>
+          </div>
+        </section>
+
+        <section id="prior-art" aria-labelledby="art-h">
+          <div class="section__head">
+            <p class="eyebrow">Prior art</p>
+            <h2 id="art-h">Worth reading first</h2>
+          </div>
+
+          <div class="art">
+            <div class="art__row">
+              <a class="art__name" href="https://github.com/cloudflare/partykit/tree/main/packages/partysync">partysync</a>
+              <p class="art__note">
+                Cloudflare's own. Whole-state over WebSocket, and on offline support it
+                says: <em>"maybe won't do."</em> This does. That's the whole pitch.
+              </p>
+            </div>
+            <div class="art__row">
+              <a class="art__name" href="https://github.com/aspen-cloud/triplit">Triplit</a>
+              <p class="art__note">Had a Durable Object adapter. Abandoned in 2025 — but worth reading.</p>
+            </div>
+            <div class="art__row">
+              <a class="art__name" href="https://yjs.dev/">Yjs</a>
+              <p class="art__note">A real CRDT. Use it if you genuinely need merge.</p>
+            </div>
+            <div class="art__row">
+              <a class="art__name" href="https://automerge.org/">Automerge</a>
+              <p class="art__note">Also a real CRDT, with a different set of trade-offs.</p>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <footer class="foot-wrap">
+      <div class="shell foot">
+        <span>MIT · Isaac Rowntree</span>
+        <nav aria-label="Elsewhere">
+          <a href="https://github.com/isaacrowntree/durable-sync">GitHub</a>
+          <a href="https://www.npmjs.com/package/durable-sync">npm</a>
+          <a href="vs.html">Compare</a>
+          <a href="llms.txt">llms.txt</a>
+        </nav>
+      </div>
+    </footer>
+
+    <script src="app.js"></script>
+  </body>
+</html>

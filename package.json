@@ -8,6 +8,10 @@
     "type": "git",
     "url": "git+https://github.com/isaacrowntree/durable-sync.git"
   },
+  "homepage": "https://isaacrowntree.github.io/durable-sync/",
+  "bugs": {
+    "url": "https://github.com/isaacrowntree/durable-sync/issues"
+  },
   "keywords": [
     "cloudflare",
     "durable-objects",

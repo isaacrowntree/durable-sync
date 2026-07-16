@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://isaacrowntree.github.io/durable-sync/sitemap.xml

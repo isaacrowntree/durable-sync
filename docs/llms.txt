@@ -1,0 +1,51 @@
+# durable-sync
+
+> Offline-first sync for Cloudflare Durable Objects. An append-only op log on the server, a durable outbox on the client. Zero dependencies, no Postgres, no long-running container, no WebSocket. TypeScript, MIT.
+
+durable-sync is a primitive, not a database. A Durable Object is already a single-threaded ordering point per user — the thing other sync engines need Postgres for — so the remaining work is an outbox, a cursor, and honesty about what has actually been acknowledged.
+
+Install: `npm i durable-sync`. Two entry points: `durable-sync/server` and `durable-sync/client`.
+
+## Core model
+
+- Ops are opaque immutable facts: `{ opId, kind, payload }`. The log never interprets a payload.
+- The server assigns `seq`, monotonic within an `epoch`. Pushes are idempotent by `opId`.
+- The client holds a durable outbox (must be IndexedDB — until a push is acknowledged the outbox may hold the only copy of a write) and a per-device cursor `{ seq, epoch }`.
+- `apply(op)` is supplied by the caller and MUST be idempotent; an op can arrive more than once.
+- A pull carrying a new `epoch` makes the client replay from 0. This is how a reset log is survivable.
+
+## Server API (`durable-sync/server`)
+
+- `SyncJournal` — extend and export from your Worker. Routes, reachable only through a binding: `POST /push` → `{ seq, accepted }`; `GET /pull?since=N` → `{ ops, seq, epoch }`; `GET /ops?kind=K` → `{ ops }`; `DELETE /reset` → `{ cleared, epoch }`.
+- `SqlOpStore`, `MemoryOpStore` — implementations of `OpStore`.
+- `handlePush`, `handlePull`, `handleReset`, `handleOpsByKind` — the pure logic, testable without a Workers runtime.
+- Address one instance per user: `ns.get(ns.idFromName(userKey))`.
+
+## Client API (`durable-sync/client`)
+
+- `createSync(options)` → `{ now, enqueue, start, subscribe, getState, getServerState }`.
+- Options: `endpoint`, `outbox`, `cursor`, `apply`, `canPull`, `canWrite`, `stateKey`, `minIntervalMs`, `pollMs`, `headers`, `timeoutMs`.
+- `localStorageCursor(key)`, `memoryCursor()`, `memoryOutbox()` — adapters.
+- `start()` wires `visibilitychange` / `pageshow` / `focus` / `online` plus a poll, single-flighted and throttled; returns a stop function. Call it from an effect, not module scope.
+- `getState` / `subscribe` / `getServerState` are shaped for React's `useSyncExternalStore`. Pass `getServerState` as the third argument — an inline `() => ({})` makes React throw.
+- The transport is deliberately not exported: reaching past `createSync` bypasses `canWrite()`.
+
+## The four failure modes it exists to prevent
+
+- `res.ok` is not evidence. An auth proxy with an expired session redirects to a same-origin login page; fetch follows it and reports 200. The reply's shape is validated before the outbox is drained.
+- A cursor only means something against the log that issued it. Every pull carries an `epoch`; a new one triggers replay from 0, otherwise a reset log leaves clients silently stalled forever.
+- Pulling is not always safe. `canPull()` defers a pull that could disturb work in progress. Pushing is always safe.
+- The gate must be the only door. `canWrite()` is checked first and `force` never skips it.
+
+## What it does not do
+
+No conflict resolution (last writer wins per record). No pagination (a pull returns everything after the cursor). No live push (converges on next foreground). No auth. One `createSync` instance per identity. Nothing runs while the app is closed — Safari has no Background Sync.
+
+If you need those, use a real sync engine — Zero, Electric, or PowerSync — and the Postgres that comes with it. If you need merge, use a CRDT: Yjs or Automerge.
+
+## Links
+
+- Docs: https://isaacrowntree.github.io/durable-sync/
+- Comparison vs Zero, Electric, PowerSync, partysync: https://isaacrowntree.github.io/durable-sync/vs.html
+- Source: https://github.com/isaacrowntree/durable-sync
+- npm: https://www.npmjs.com/package/durable-sync
