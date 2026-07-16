@@ -13,18 +13,24 @@ Install: `npm i durable-sync`. Two entry points: `durable-sync/server` and `dura
 - The client holds a durable outbox (must be IndexedDB — until a push is acknowledged the outbox may hold the only copy of a write) and a per-device cursor `{ seq, epoch }`.
 - `apply(op)` is supplied by the caller and MUST be idempotent; an op can arrive more than once.
 - A pull carrying a new `epoch` makes the client replay from 0. This is how a reset log is survivable.
+- A push reply names the opIds the log holds (`stored`). The client drains exactly those, so an op the journal refused stays queued rather than vanishing.
+- Snapshots are optional and client-captured: the journal cannot fold the log because it never reads a payload, so a client folds and the journal stores the blob opaquely. The log is never pruned, so a snapshot is only ever an accelerator.
 
 ## Server API (`durable-sync/server`)
 
-- `SyncJournal` — extend and export from your Worker. Routes, reachable only through a binding: `POST /push` → `{ seq, accepted }`; `GET /pull?since=N` → `{ ops, seq, epoch }`; `GET /ops?kind=K` → `{ ops }`; `DELETE /reset` → `{ cleared, epoch }`.
+- `SyncJournal` — extend and export from your Worker. Routes, reachable only through a binding: `POST /push` → `{ seq, accepted, stored }`; `GET /pull?since=N[&snapshot=1]` → `{ ops, seq, epoch, snapshot? }`; `PUT /snapshot` `{ seq, epoch, blob }` → `{ ok, seq }`; `GET /ops?kind=K` → `{ ops }`; `DELETE /reset` → `{ cleared, epoch }`.
 - `SqlOpStore`, `MemoryOpStore` — implementations of `OpStore`.
-- `handlePush`, `handlePull`, `handleReset`, `handleOpsByKind` — the pure logic, testable without a Workers runtime.
+- `handlePush`, `handlePull`, `handleReset`, `handleOpsByKind`, `handleSnapshot` — the pure logic, testable without a Workers runtime.
 - Address one instance per user: `ns.get(ns.idFromName(userKey))`.
+- `handlePull(store, since, withSnapshot)` only returns a snapshot when `since` is 0 AND the caller asked — otherwise `ops` would be a tail and a client that can't restore would hold a history with a hole at the front.
+- `handleSnapshot` refuses a fold whose `epoch` isn't current (a client that missed a reset must not undo it), whose `seq` exceeds `maxSeq`, or that is older than the fold already held.
 
 ## Client API (`durable-sync/client`)
 
-- `createSync(options)` → `{ now, enqueue, start, subscribe, getState, getServerState }`.
-- Options: `endpoint`, `outbox`, `cursor`, `apply`, `canPull`, `canWrite`, `stateKey`, `minIntervalMs`, `pollMs`, `headers`, `timeoutMs`.
+- `createSync(options)` → `{ now, enqueue, start, capture, subscribe, getState, getServerState }`.
+- Options: `endpoint`, `outbox`, `cursor`, `apply`, `canPull`, `canWrite`, `stateKey`, `minIntervalMs`, `pollMs`, `headers`, `timeoutMs`, `snapshot`.
+- `snapshot?: SnapshotAdapter` — `{ capture(), restore(blob) }`. `restore` returns false (or throws) to refuse a blob it doesn't recognise, e.g. one an older build wrote; the client then replays the whole log, which is slow and always correct. Version your own blob.
+- `sync.capture()` folds the log and PUTs it. Nothing calls it for you — only the app knows when its state is settled rather than mid-edit. Behind `canWrite()`. Returns false rather than throwing.
 - `localStorageCursor(key)`, `memoryCursor()`, `memoryOutbox()` — adapters.
 - `start()` wires `visibilitychange` / `pageshow` / `focus` / `online` plus a poll, single-flighted and throttled; returns a stop function. Call it from an effect, not module scope.
 - `getState` / `subscribe` / `getServerState` are shaped for React's `useSyncExternalStore`. Pass `getServerState` as the third argument — an inline `() => ({})` makes React throw.
@@ -39,7 +45,7 @@ Install: `npm i durable-sync`. Two entry points: `durable-sync/server` and `dura
 
 ## What it does not do
 
-No conflict resolution (last writer wins per record). No pagination (a pull returns everything after the cursor). No live push (converges on next foreground). No auth. One `createSync` instance per identity. Nothing runs while the app is closed — Safari has no Background Sync.
+No conflict resolution (last writer wins per record). No pagination (a pull returns everything after the cursor; snapshots fold the cold start, but the tail is still one response). No live push (converges on next foreground). No auth. One `createSync` instance per identity. Nothing runs while the app is closed — Safari has no Background Sync.
 
 If you need those, use a real sync engine — Zero, Electric, or PowerSync — and the Postgres that comes with it. If you need merge, use a CRDT: Yjs or Automerge.
 

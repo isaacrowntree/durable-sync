@@ -58,6 +58,11 @@ export interface Sync {
   enqueue(op: { opId: string; kind: string; payload: unknown }): Promise<void>;
   /** Wire the lifecycle triggers. Returns a stop function. */
   start(): () => void;
+  /** Fold the log so the next cold start doesn't replay it. Requires the
+   * `snapshot` option; returns false if the journal didn't take the fold.
+   * Never throws, and never required — call it when your state is settled
+   * (after a sync, not mid-edit). */
+  capture(): Promise<boolean>;
   /** For React's useSyncExternalStore. The snapshot is referentially stable
    * between changes — returning a fresh object each call spins React. */
   subscribe(onChange: () => void): () => void;
@@ -186,6 +191,9 @@ export function createSync(opts: SyncOptions): Sync {
     now: syncNow,
     enqueue: transport.enqueue,
     start,
+    // Behind canWrite() like everything else: a device that may not sync may
+    // not tell the journal what the log adds up to either.
+    capture: async () => ((await canWrite()) ? transport.capture() : false),
     subscribe(onChange) {
       listeners.add(onChange);
       return () => void listeners.delete(onChange);

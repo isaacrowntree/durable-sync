@@ -1,5 +1,57 @@
 # Changelog
 
+## 0.2.0 — 2026-07-16
+
+A silent-loss fix that needs no migration, and snapshots, which are opt-in.
+
+### Fixed: a refused op was drained as if it had been stored
+
+The same bug as trusting `res.ok`, one layer in. The journal refuses an op with
+a blank `opId` or `kind` — and said so, in `accepted` — but the client drained
+the whole outbox against any well-formed reply and never looked. The write was
+gone, the sync reported clean, and the status row said `lastOkAt`. For a
+package whose pitch is *the outbox may hold the only copy of a write*, this was
+the last hole, and it was self-inflicted.
+
+`handlePush` now returns `stored: string[]` — the opIds the log holds, whether
+inserted just now or already present from a push whose reply got lost — and the
+client drains exactly those. A count couldn't carry this: `accepted: 1` of two
+ops means one stored and one *refused*, or one stored and one *duplicate*, and
+those need opposite handling.
+
+A client newer than its Worker sees no `stored` and keeps the old behaviour, so
+a rollout where the PWA leads the Worker is not a regression.
+
+### Added: snapshots, for logs that have got long
+
+A pull replays every op after your cursor. That's free for a year and a real
+wait after a few — tens of thousands of ops downloaded and applied before a new
+device shows a single number, and again for every client after a reset.
+
+The journal can't fold the log: it never reads a payload, which is what keeps it
+a primitive. So a client folds and the journal stores the result opaquely.
+
+- `snapshot?: SnapshotAdapter` on `createSync` — your `capture()` and
+  `restore(blob)`. Omit it and nothing changes.
+- `sync.capture()` — fold now. Nothing calls it for you; only your app knows
+  when its state is settled rather than mid-edit. Behind `canWrite()`.
+- `GET /pull?since=0&snapshot=1` returns `{ snapshot, ops }` where `ops` is the
+  tail. Only a cold-start caller that asked ever gets one.
+- `PUT /snapshot` `{ seq, epoch, blob }` → `{ ok, seq }`. Route it if you use
+  snapshots.
+
+The log is never pruned, so this is only ever an accelerator: `restore` can
+return false — do that for a blob an older build wrote — and the client replays
+the whole log, which is slow and always correct. The journal refuses a fold of
+a generation that no longer exists, so a client that missed a reset can't undo
+it for everyone else.
+
+### Also
+
+- `SqlOpStore` has tests now, against real SQLite via `node:sqlite`. It's what
+  every production journal actually runs, and the suite only ever covered
+  `MemoryOpStore` — so no constraint or upsert in it had ever been executed.
+
 ## 0.1.2 — 2026-07-16
 
 No code changes. The README shipped two claims about `partysync` that don't

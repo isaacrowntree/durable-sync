@@ -10,6 +10,7 @@ export {
   type TransportOptions,
   type PushOutcome,
   type PullOutcome,
+  type SnapshotAdapter,
 } from "./transport.js";
 
 export {
@@ -22,4 +23,4 @@ export {
 
 export { localStorageCursor, memoryCursor, memoryOutbox } from "./adapters.js";
 
-export type { StoredOp, JournalOp } from "../server/journal.js";
+export type { StoredOp, JournalOp, Snapshot } from "../server/journal.js";

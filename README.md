@@ -49,6 +49,7 @@ So this is small on purpose:
 | **Server** | append-only op log on DO SQLite; idempotent by `opId`; epochs |
 | **Client** | durable outbox; per-device cursor; idempotent apply; replay-on-epoch-change |
 | **Lifecycle** | sync on `visibilitychange` / `pageshow` / `focus` / `online` + poll, single-flighted and throttled |
+| **Cold start** | optional snapshots, so a new device doesn't replay a log years long |
 | **Honesty** | a status you can show users that cannot claim success it didn't have |
 
 ## Server
@@ -84,8 +85,22 @@ export async function POST(req: Request) {
 
 export async function GET(req: Request) {
   const journal = journalFor(req);
-  const since = new URL(req.url).searchParams.get("since") ?? "0";
-  return journal.fetch(`https://journal/pull?since=${encodeURIComponent(since)}`);
+  const q = new URL(req.url).searchParams;
+  const since = q.get("since") ?? "0";
+  // Forward `snapshot` too, or the client asks for a fold and never gets one —
+  // which costs a slow cold start, not a wrong one.
+  const snap = q.get("snapshot") === "1" ? "&snapshot=1" : "";
+  return journal.fetch(`https://journal/pull?since=${encodeURIComponent(since)}${snap}`);
+}
+
+// Only if you're using snapshots.
+export async function PUT(req: Request) {
+  const journal = journalFor(req);
+  return journal.fetch("https://journal/snapshot", {
+    method: "PUT",
+    body: await req.text(),
+    headers: { "content-type": "application/json" },
+  });
 }
 ```
 
@@ -147,6 +162,48 @@ const dexieOutbox = (table) => ({
   has: async (opId) => (await table.where({ opId }).count()) > 0,
 });
 ```
+
+### Snapshots, once the log is long
+
+Skip this until you need it. A pull replays every op after your cursor, which
+is nothing at all for a year and a real wait after a few: a lifter three years
+in has tens of thousands of ops, and without a snapshot every new phone
+downloads all of them and runs `apply` on each before showing a single number.
+So does every client after a reset, since the recovery path is a replay from 0.
+
+The journal can't fold the log for you — it never reads a payload, which is the
+whole reason it stays a primitive. So a client folds, and the journal stores the
+result as opaquely as it stores a payload:
+
+```ts
+export const sync = createSync({
+  // ...as above
+  snapshot: {
+    capture: () => db.notes.toArray().then((notes) => ({ v: 1, notes })),
+    async restore(blob) {
+      // Refuse anything you don't recognise — a snapshot written by a build
+      // that isn't this one. Returning false replays the whole log, which is
+      // slow and always correct. Guessing is neither.
+      if ((blob as any)?.v !== 1) return false;
+      await db.notes.bulkPut((blob as any).notes);
+      return true;
+    },
+  },
+});
+```
+
+Nothing captures for you — only your app knows when its state is settled rather
+than mid-edit:
+
+```ts
+// after a sync, when the log has grown enough to be worth folding
+void sync.capture();
+```
+
+The log is never pruned, so a snapshot is only ever an accelerator: it can be
+refused, corrupt, or absent and the log alone still rebuilds the client. Route
+`PUT` to use it (see below). The journal refuses a fold of a generation that no
+longer exists, so a reset can't be undone by a client that missed it.
 
 ### Showing sync state
 

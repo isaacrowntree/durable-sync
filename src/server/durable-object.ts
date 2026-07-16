@@ -10,6 +10,7 @@ import {
   handlePull,
   handleReset,
   handleOpsByKind,
+  handleSnapshot,
   type JournalOp,
   type SqlLike,
 } from "./journal.js";
@@ -29,10 +30,11 @@ export interface JournalState {
  * ```
  *
  * Routes (reachable only through a binding — expose what you want publicly):
- * - `POST   /push`            `{ ops }` → `{ seq, accepted }`
- * - `GET    /pull?since=N`             → `{ ops, seq, epoch }`
- * - `GET    /ops?kind=K`               → `{ ops }`
- * - `DELETE /reset`                    → `{ cleared, epoch }`
+ * - `POST   /push`                     `{ ops }` → `{ seq, accepted, stored }`
+ * - `GET    /pull?since=N[&snapshot=1]`         → `{ ops, seq, epoch, snapshot? }`
+ * - `PUT    /snapshot`     `{ seq, epoch, blob }` → `{ ok, seq }`
+ * - `GET    /ops?kind=K`                        → `{ ops }`
+ * - `DELETE /reset`                             → `{ cleared, epoch }`
  */
 export class SyncJournal {
   protected store: SqlOpStore;
@@ -49,6 +51,11 @@ export class SyncJournal {
       return Response.json(handlePush(this.store, body?.ops ?? []));
     }
 
+    if (request.method === "PUT") {
+      const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+      return Response.json(handleSnapshot(this.store, body ?? {}));
+    }
+
     // Maintenance escape hatch for an append-only log. Deliberately on DELETE:
     // route only the methods you want reachable from the public internet.
     if (request.method === "DELETE") {
@@ -60,6 +67,8 @@ export class SyncJournal {
     }
 
     const since = Number(url.searchParams.get("since") ?? 0) || 0;
-    return Response.json(handlePull(this.store, since));
+    return Response.json(
+      handlePull(this.store, since, url.searchParams.get("snapshot") === "1"),
+    );
   }
 }

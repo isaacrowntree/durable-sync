@@ -5,6 +5,7 @@ import {
   handlePull,
   handleReset,
   handleOpsByKind,
+  handleSnapshot,
   type JournalOp,
 } from "./journal.js";
 
@@ -52,6 +53,28 @@ describe("op log", () => {
     expect(r.accepted).toBe(1);
     expect(handlePull(store, 0).ops.map((o) => o.opId)).toEqual(["good"]);
   });
+
+  /** `stored` is what the client drains against, so it has to name exactly the
+   * ops the log holds — never the ones it refused. */
+  it("names only the ops it kept, so a refused one can't be drained", () => {
+    const store = new MemoryOpStore();
+    const r = handlePush(store, [
+      { opId: "", kind: "put", payload: 1 },
+      { opId: "ok", kind: "", payload: 1 },
+      op("good"),
+    ]);
+    expect(r.stored).toEqual(["good"]);
+  });
+
+  /** A duplicate is refused for insertion but the log still has it, so the
+   * client must be told to forget it — otherwise a retried push queues forever. */
+  it("names a duplicate as stored, even though it wasn't accepted", () => {
+    const store = new MemoryOpStore();
+    handlePush(store, [op("a")]);
+    const again = handlePush(store, [op("a"), op("b")]);
+    expect(again.accepted).toBe(1);
+    expect(again.stored).toEqual(["a", "b"]);
+  });
 });
 
 /** A cursor is only meaningful against the log that issued it. Reset the log
@@ -87,6 +110,107 @@ describe("epoch", () => {
     const after = handlePush(store, [op("old"), op("new")]);
     expect(after.accepted).toBe(2);
     expect(handlePull(store, 0).seq).toBe(2);
+  });
+});
+
+/** The log can't fold itself — it never reads a payload — so a client folds
+ * and hands back the result. The log stores it as opaquely as it stores a
+ * payload, and it stays an accelerator: nothing is pruned, so refusing a
+ * snapshot and replaying from 0 is always still correct. */
+describe("snapshot", () => {
+  const filled = () => {
+    const store = new MemoryOpStore();
+    handlePush(store, [op("a"), op("b"), op("c")]);
+    return store;
+  };
+
+  it("is absent until a client folds the log", () => {
+    const store = filled();
+    expect(handlePull(store, 0, true).snapshot).toBeUndefined();
+    expect(handlePull(store, 0, true).ops).toHaveLength(3);
+  });
+
+  it("comes back with only the ops after it", () => {
+    const store = filled();
+    const e = store.epoch();
+    expect(handleSnapshot(store, { seq: 2, epoch: e, blob: { total: 2 } })).toEqual({
+      ok: true,
+      seq: 2,
+    });
+
+    const r = handlePull(store, 0, true);
+    expect(r.snapshot).toEqual({ seq: 2, blob: { total: 2 } });
+    expect(r.ops.map((o) => o.opId)).toEqual(["c"]); // the tail, not the log
+    expect(r.seq).toBe(3);
+  });
+
+  /** Only a caller that asked can be sent a tail — anyone else would be handed
+   * a history with a hole at the front and never know. */
+  it("is withheld from a caller that didn't ask, who gets the whole log", () => {
+    const store = filled();
+    handleSnapshot(store, { seq: 2, epoch: store.epoch(), blob: {} });
+
+    const r = handlePull(store, 0);
+    expect(r.snapshot).toBeUndefined();
+    expect(r.ops.map((o) => o.opId)).toEqual(["a", "b", "c"]);
+  });
+
+  it("is withheld mid-log, where it would skip ops the client lacks", () => {
+    const store = filled();
+    handleSnapshot(store, { seq: 2, epoch: store.epoch(), blob: {} });
+
+    const r = handlePull(store, 1, true);
+    expect(r.snapshot).toBeUndefined();
+    expect(r.ops.map((o) => o.opId)).toEqual(["b", "c"]);
+  });
+
+  /** The dangerous one. A client that folded the old log and missed the reset
+   * would otherwise hand every new device the state the reset destroyed. */
+  it("refuses a fold of a log generation that no longer exists", () => {
+    const store = filled();
+    const stale = store.epoch();
+    handleReset(store);
+    handlePush(store, [op("fresh")]);
+
+    expect(handleSnapshot(store, { seq: 1, epoch: stale, blob: { ghost: true } })).toEqual({
+      ok: false,
+      seq: 0,
+    });
+    expect(handlePull(store, 0, true).snapshot).toBeUndefined();
+  });
+
+  it("drops its snapshot on reset", () => {
+    const store = filled();
+    handleSnapshot(store, { seq: 3, epoch: store.epoch(), blob: {} });
+    handleReset(store);
+    expect(store.readSnapshot()).toBeNull();
+  });
+
+  it("refuses a fold of ops it has never seen", () => {
+    const store = filled();
+    expect(handleSnapshot(store, { seq: 99, epoch: store.epoch(), blob: {} }).ok).toBe(false);
+  });
+
+  it("refuses a seq that isn't a positive integer", () => {
+    const store = filled();
+    const e = store.epoch();
+    for (const seq of [0, -1, 1.5, "2", null, undefined, NaN]) {
+      expect(handleSnapshot(store, { seq, epoch: e, blob: {} }).ok).toBe(false);
+    }
+  });
+
+  /** Two clients race, or one has been offline a month. Not an error — the
+   * newer fold just wins, and the older one must not undo it. */
+  it("keeps the newer fold when an older one arrives late", () => {
+    const store = filled();
+    const e = store.epoch();
+    handleSnapshot(store, { seq: 3, epoch: e, blob: { v: "new" } });
+
+    expect(handleSnapshot(store, { seq: 1, epoch: e, blob: { v: "old" } })).toEqual({
+      ok: false,
+      seq: 3,
+    });
+    expect(store.readSnapshot()).toEqual({ seq: 3, blob: { v: "new" } });
   });
 });
 

@@ -1,7 +1,28 @@
 /** The client half: an outbox that survives being offline, a cursor that knows
  * which log it belongs to, and the two requests between them. */
 
-import type { StoredOp } from "../server/journal.js";
+import type { StoredOp, Snapshot } from "../server/journal.js";
+
+/** Skips the cold-start replay: fold the log once, and let the next device
+ * start from the fold instead of repeating it.
+ *
+ * A log that runs for years is the point of this package and also its bill. A
+ * lifter three years in has tens of thousands of ops, and without this every
+ * new phone downloads all of them and runs `apply` on each one before showing
+ * a single number — as does every client after a reset, since the recovery
+ * path is to replay from 0.
+ *
+ * The blob is opaque to the journal, so its shape is yours and so is its
+ * versioning: stamp it, and refuse a stamp you don't recognise. */
+export interface SnapshotAdapter {
+  /** Fold current local state into something JSON-serialisable. */
+  capture(): Promise<unknown> | unknown;
+  /** Rebuild local state from a blob `capture()` produced. Return false — or
+   * throw — if you can't, and the client replays the whole log instead. That
+   * fallback is what makes a snapshot from an older build survivable rather
+   * than fatal, so prefer refusing to guessing. */
+  restore(blob: unknown): Promise<boolean> | boolean;
+}
 
 export interface OutboxRow {
   /** Whatever your store uses as a row key — opaque here. */
@@ -47,6 +68,9 @@ export interface TransportOptions {
   /** Extra headers per request — e.g. an auth header in local dev. */
   headers?(): HeadersInit;
   timeoutMs?: number;
+  /** Omit and every cold start replays the whole log, which is the right
+   * trade until the log is long. Nothing captures for you — see `capture()`. */
+  snapshot?: SnapshotAdapter;
 }
 
 const DEFAULT_TIMEOUT = 10_000;
@@ -81,6 +105,7 @@ export function createTransport(opts: TransportOptions) {
     apply,
     headers,
     timeoutMs = DEFAULT_TIMEOUT,
+    snapshot,
   } = opts;
 
   const requestHeaders = (extra: HeadersInit = {}): HeadersInit => ({
@@ -106,34 +131,93 @@ export function createTransport(opts: TransportOptions) {
         signal: AbortSignal.timeout(timeoutMs),
       });
       if (!res.ok) return { ok: false, pushed: 0 };
-      const reply = (await res.json().catch(() => null)) as { seq?: unknown } | null;
+      const reply = (await res.json().catch(() => null)) as
+        | { seq?: unknown; stored?: unknown }
+        | null;
       if (!isJournalReply(reply)) return { ok: false, pushed: 0 };
-      await outbox.remove(rows.map((r) => r.id));
-      return { ok: true, pushed: rows.length };
+
+      // Drain only what the journal said it holds. A reply proves the journal
+      // answered; it does not prove the journal took every op — it refuses one
+      // with a blank opId or kind, and draining that on the strength of the
+      // reply is the same bug as trusting `res.ok`, one layer in.
+      //
+      // A journal older than this client sends no `stored`. Nothing can be
+      // inferred from that, so keep the pre-existing behaviour rather than
+      // stall a rollout where the Worker lags the PWA.
+      const stored = Array.isArray(reply.stored) ? new Set(reply.stored as unknown[]) : null;
+      const drain = stored ? rows.filter((r) => stored.has(r.opId)) : rows;
+
+      await outbox.remove(drain.map((r) => r.id));
+      return { ok: true, pushed: drain.length };
     } catch {
       // offline — the outbox flushes next time
       return { ok: false, pushed: 0 };
     }
   }
 
-  async function fetchPull(from: number) {
-    const res = await fetch(`${endpoint}?since=${from}`, {
+  async function fetchPull(from: number, withSnapshot = false) {
+    const q = withSnapshot ? `?since=${from}&snapshot=1` : `?since=${from}`;
+    const res = await fetch(`${endpoint}${q}`, {
       headers: requestHeaders(),
       signal: AbortSignal.timeout(timeoutMs),
     });
     if (!res.ok) return null;
     const body = (await res.json().catch(() => null)) as
-      | { ops?: StoredOp[]; seq?: number; epoch?: string }
+      | { ops?: StoredOp[]; seq?: number; epoch?: string; snapshot?: Snapshot }
       | null;
     return isJournalReply(body) ? body : null;
+  }
+
+  /** True only if local state now really is the snapshot. Anything else — no
+   * adapter, a refusal, a throw — is false, and the caller replays the log. */
+  async function restoreSnapshot(snap: Snapshot): Promise<boolean> {
+    if (!snapshot) return false;
+    try {
+      return await snapshot.restore(snap.blob);
+    } catch {
+      // A blob this build can't read is exactly what the log is still for.
+      return false;
+    }
+  }
+
+  /** Fold the log so the next cold start doesn't have to.
+   *
+   * Nothing calls this for you: only the app knows when its state is worth
+   * folding and when it's mid-edit. Cheap to skip, safe to repeat, and never
+   * required — the log alone is always enough. */
+  async function capture(): Promise<boolean> {
+    if (!snapshot) return false;
+    const { seq, epoch } = await cursor.read();
+    // Nothing pulled yet, so there's nothing this could be a fold *of*. And
+    // without the epoch the journal can't tell whether we're folding the log
+    // it has or one it threw away.
+    if (!seq || !epoch) return false;
+    try {
+      const blob = await snapshot.capture();
+      const res = await fetch(endpoint, {
+        method: "PUT",
+        headers: requestHeaders({ "content-type": "application/json" }),
+        body: JSON.stringify({ seq, epoch, blob }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (!res.ok) return false;
+      const reply = (await res.json().catch(() => null)) as { ok?: unknown } | null;
+      return reply?.ok === true;
+    } catch {
+      // Offline, or a fold that wouldn't serialise. Neither costs anything:
+      // the log is untouched and the next attempt can try again.
+      return false;
+    }
   }
 
   /** Pull ops after our cursor and apply them. */
   async function pull(): Promise<PullOutcome> {
     const current = await cursor.read();
     const since = current.seq || 0;
+    // Only a cold start can use a fold, and only if we know how to unfold it.
+    const wantSnapshot = since === 0 && !!snapshot;
     try {
-      let body = await fetchPull(since);
+      let body = await fetchPull(since, wantSnapshot);
       if (!body) return { ok: false, applied: 0 };
 
       // A cursor only means something against the generation that issued it.
@@ -144,8 +228,20 @@ export function createTransport(opts: TransportOptions) {
       // which is what lets already-deployed clients recover.
       const epoch = body.epoch;
       if (epoch && epoch !== current.epoch) {
-        body = await fetchPull(0);
+        // The replay a reset forces is the most expensive pull there is, so
+        // it's the one that most wants a fold.
+        body = await fetchPull(0, !!snapshot);
         if (!body) return { ok: false, applied: 0 };
+      }
+
+      // `ops` is a tail whenever a snapshot came back, so failing to restore
+      // one means the history in hand has a hole at the front. Refetch the
+      // whole log rather than apply a tail onto nothing.
+      if (body.snapshot) {
+        if (!(await restoreSnapshot(body.snapshot))) {
+          body = await fetchPull(0, false);
+          if (!body) return { ok: false, applied: 0 };
+        }
       }
 
       let applied = 0;
@@ -176,5 +272,5 @@ export function createTransport(opts: TransportOptions) {
     await outbox.add(op);
   }
 
-  return { push, pull, enqueue };
+  return { push, pull, enqueue, capture };
 }

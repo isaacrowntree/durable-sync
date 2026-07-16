@@ -3,6 +3,7 @@ export {
   handlePull,
   handleReset,
   handleOpsByKind,
+  handleSnapshot,
   MemoryOpStore,
   SqlOpStore,
   type JournalOp,
@@ -10,6 +11,8 @@ export {
   type OpStore,
   type PushResult,
   type PullResult,
+  type SnapshotResult,
+  type Snapshot,
   type SqlLike,
 } from "./journal.js";
 
