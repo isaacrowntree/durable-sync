@@ -2,8 +2,8 @@
  *
  * Every check here has a faster cousin in the unit suite. What only this suite
  * can catch is a statement that parses under node:sqlite but behaves
- * differently — or not at all — under the DO's SQLite, reached through the DO's
- * own fetch routing rather than a direct method call. Storage is isolated per
+ * differently — or not at all — under the DO's SQLite, reached the way a
+ * consumer reaches it: HTTP into a Worker, RPC into the DO. Storage is isolated per
  * test (see the config), so each test builds the log it needs. */
 import { SELF } from "cloudflare:test";
 import { describe, it, expect, beforeEach } from "vitest";

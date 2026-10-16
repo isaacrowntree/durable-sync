@@ -26,10 +26,10 @@ jobs:
       contents: read
       id-token: write # required for OIDC — without it npm falls back to a token and fails
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           registry-url: https://registry.npmjs.org
       # OIDC needs npm >= 11.5.1, and Node 22 ships npm 10.9.x — so setup-node
       # alone is not enough. Without this npm never attempts OIDC at all: it

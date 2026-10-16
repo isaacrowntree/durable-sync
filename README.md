@@ -285,8 +285,10 @@ extracted from, and it's what the four warnings above are scar tissue from: a
 real workout was destroyed by the `res.ok` one, in production, before it was
 understood.
 
-Rampset keeps what a sync library can't have — what its ops *mean*, and what
-applying one does to its database — and this package owns the transport.
+Rampset runs 0.3: its API routes call `push`, `pull` and `opsByKind` on the
+journal over RPC. It keeps what a sync library can't have — what its ops
+*mean*, and what applying one does to its database — and this package owns the
+transport.
 
 ## Prior art
 

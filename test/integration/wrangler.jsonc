@@ -1,7 +1,7 @@
 {
   // Config for the integration suite only — never published (see package.json
   // `files`). The compatibility date is pinned, not floating: it must stay
-  // within the window of the workerd that @cloudflare/vitest-pool-workers
+  // within the window of the workerd that @cloudflare/vitest-plugin
   // bundles, and a date newer than the binary refuses to boot. Bump it and the
   // pool version together, never on their own.
   "name": "journal-integration",

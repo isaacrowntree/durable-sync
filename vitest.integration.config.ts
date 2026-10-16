@@ -5,13 +5,12 @@
  *
  * The unit suite (MemoryOpStore, and SqlOpStore over node:sqlite) proves the
  * logic and that the SQL parses. This proves the SQL runs where it's deployed:
- * DO SQLite, through the DO's own fetch routing. */
+ * DO SQLite, reached through the journal's own RPC methods. */
 import { defineConfig } from "vitest/config";
-import { cloudflareTest } from "@cloudflare/vitest-pool-workers";
+import { cloudflareTest } from "@cloudflare/vitest-plugin";
 
-// The pool is a Vite plugin as of 0.18 (the vitest-4 line); the older
-// `defineWorkersConfig` / `poolOptions` entrypoint is gone. Same options,
-// different door.
+// @cloudflare/vitest-plugin is the renamed @cloudflare/vitest-pool-workers:
+// the same Vite plugin and options, on the line that supports Vitest 5.
 export default defineConfig({
   plugins: [
     cloudflareTest({

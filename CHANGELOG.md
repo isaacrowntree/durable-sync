@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+Tooling only. No API or runtime change: the built `dist/` is byte-identical to
+0.3.0's, so there is nothing to publish.
+
+- Built and type-checked with TypeScript 7, the native compiler.
+- Tests run on Vitest 5. The integration suite moves from
+  `@cloudflare/vitest-pool-workers` to its renamed successor,
+  `@cloudflare/vitest-plugin`, which is what makes Vitest 5 possible — the old
+  package stops at Vitest 4 and gets no further updates.
+- CI, integration and publish workflows run on Node 24 with
+  `actions/checkout` and `actions/setup-node` v7.
+
 ## 0.3.0 — 2026-07-16
 
 **Breaking, server only. The client is untouched — no client change is needed.**
@@ -48,6 +61,11 @@ Worker↔DO code shape moved.
 
 - A runnable example: [`examples/notes`](examples/notes), a Worker plus a
   browser client with a real IndexedDB outbox, verified end to end.
+- An opt-in integration suite, `npm run test:integration`: the journal in a
+  real Durable Object on workerd, reached over HTTP and RPC the way a consumer
+  reaches it — push and the `stored` ack, pull, the snapshot upsert, reset,
+  and the stale-epoch refusal. It stays out of `npm test` and runs on demand in
+  CI, because booting workerd is an order of magnitude slower.
 
 ## 0.2.0 — 2026-07-16
 

@@ -14,7 +14,7 @@ npm run test:integration   # the journal inside a real Durable Object
 prove the statements parse and the constraints hold.
 
 **Integration** (`test/integration/`) boots `workerd` through
-[`@cloudflare/vitest-pool-workers`](https://developers.cloudflare.com/workers/testing/vitest-integration/)
+[`@cloudflare/vitest-plugin`](https://developers.cloudflare.com/workers/testing/vitest-integration/)
 and drives every route against the DO's own SQLite, through its own `fetch`
 routing. It's what catches a divergence between `node:sqlite` and the SQLite
 that actually ships. It's an order of magnitude slower, so it's kept out of
