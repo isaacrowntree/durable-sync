@@ -15,8 +15,8 @@ prove the statements parse and the constraints hold.
 
 **Integration** (`test/integration/`) boots `workerd` through
 [`@cloudflare/vitest-plugin`](https://developers.cloudflare.com/workers/testing/vitest-integration/)
-and drives every route against the DO's own SQLite, through its own `fetch`
-routing. It's what catches a divergence between `node:sqlite` and the SQLite
+and drives every route against the DO's own SQLite, reached the way a
+consumer reaches it: HTTP into a Worker, RPC into the Durable Object. It's what catches a divergence between `node:sqlite` and the SQLite
 that actually ships. It's an order of magnitude slower, so it's kept out of
 `npm test` and off the push/PR CI — run it by hand, or trigger the `integration`
 workflow from the Actions tab.
