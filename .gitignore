@@ -8,3 +8,6 @@ dist/
 .env
 .env.*
 !.env.example
+
+# Local Claude Code state (agent worktrees)
+.claude/
