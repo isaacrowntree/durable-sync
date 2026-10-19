@@ -55,3 +55,6 @@ If you need those, use a real sync engine — Zero, Electric, or PowerSync — a
 - Comparison vs Zero, Electric, PowerSync, partysync: https://isaacrowntree.com/durable-sync/vs.html
 - Source: https://github.com/isaacrowntree/durable-sync
 - npm: https://www.npmjs.com/package/durable-sync
+- Sister library, passkey sign-in in one Durable Object: https://isaacrowntree.com/durable-auth/
+- Used in production by Rampset, the offline-first barbell app it was extracted from: https://isaacrowntree.github.io/rampset/ (try it: https://liftlog.zackdesign.biz)
+- Write-up: https://zackdesign.biz/durable-sync/

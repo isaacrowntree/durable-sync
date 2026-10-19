@@ -8,7 +8,12 @@ npm i durable-sync
 ```
 
 **[Docs and a live demo →](https://isaacrowntree.com/durable-sync/)** ·
-[vs Zero, Electric, PowerSync](https://isaacrowntree.com/durable-sync/vs.html)
+[vs Zero, Electric, PowerSync](https://isaacrowntree.com/durable-sync/vs.html) ·
+[Write-up](https://zackdesign.biz/durable-sync/)
+
+Part of a set: [Rampset](https://isaacrowntree.github.io/rampset/), the app it
+came from, and [durable-auth](https://isaacrowntree.com/durable-auth/), passkey
+sign-in in one more Durable Object.
 
 Cloudflare's own experimental `partysync` files offline support under a README
 heading called *"Maybe won't do."* This does it. That's the whole pitch.
