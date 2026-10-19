@@ -24,19 +24,18 @@
     <meta property="og:image:height" content="630" />
     <meta name="twitter:card" content="summary_large_image" />
 
-    <meta name="theme-color" content="#0b1020" />
+    <meta name="theme-color" content="#f6f8f4" />
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..800&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400..700&family=Atkinson+Hyperlegible+Next:ital,wght@0,400..800;1,400..800&display=swap"
     />
     <link rel="stylesheet" href="style.css" />
   </head>
-
-  <body>
+<body>
     <header class="masthead">
       <div class="shell masthead__inner">
         <a class="wordmark" href="./">durable<span>-</span>sync</a>
@@ -52,17 +51,16 @@
     <main>
       <div class="shell prose">
         <section class="hero">
-          <p class="eyebrow">Comparison · checked July 2026</p>
           <h1>durable-sync vs the real sync engines</h1>
           <p class="hero__lede">
             Most of the time, one of the others is the right answer.
             <strong>This page is about the times it isn't.</strong>
           </p>
+          <p class="hero__meta hero__meta--after">An honest comparison, checked July 2026</p>
         </section>
 
-        <section aria-labelledby="axis-h" style="border-top: 0; padding-top: 0">
+        <section class="flush" aria-labelledby="axis-h">
           <div class="section__head">
-            <p class="eyebrow">The axis that actually decides it</p>
             <h2 id="axis-h">What does it need running?</h2>
             <p>
               Feature checklists move every quarter. The structural question doesn't:
@@ -143,7 +141,7 @@
             </table>
           </div>
 
-          <p style="margin-top: 1rem; font-family: var(--mono); font-size: 0.72rem; color: var(--dimmer); max-width: none">
+          <p class="fine">
             Checked against primary docs, July 2026. These projects move fast and this
             table is written by someone with an obvious interest — if a row is wrong or
             out of date,
@@ -157,11 +155,10 @@
 
         <section aria-labelledby="use-h">
           <div class="section__head">
-            <p class="eyebrow">Straight answers</p>
             <h2 id="use-h">Which one should you use?</h2>
           </div>
 
-          <h3 style="margin-bottom: 0.5rem">Use PowerSync, Zero or Electric if…</h3>
+          <h3>Use PowerSync, Zero or Electric if…</h3>
           <p>
             You already run Postgres, or you'd accept running it. You need real conflict
             resolution, partial sync of a large dataset, or instant cross-device updates.
@@ -177,21 +174,21 @@
             as the answer here, with a Postgres and a service under it.
           </p>
 
-          <h3 style="margin-bottom: 0.5rem">Use Yjs or Automerge if…</h3>
+          <h3>Use Yjs or Automerge if…</h3>
           <p>
             Two people can edit the same thing at the same time and you need the result
             to merge rather than for one of them to win. That's a CRDT problem, and
             reaching for anything else is a mistake you'll pay for later.
           </p>
 
-          <h3 style="margin-bottom: 0.5rem">Use partysync if…</h3>
+          <h3>Use partysync if…</h3>
           <p>
             You're all-Cloudflare, you want live updates over a WebSocket, and your users
             are never offline. It's Cloudflare's own, and it's the better fit whenever
             offline genuinely doesn't matter.
           </p>
 
-          <h3 style="margin-bottom: 0.5rem">Use durable-sync if…</h3>
+          <h3>Use durable-sync if…</h3>
           <p>
             You're all-Cloudflare and unwilling to add a second backend, your writes are
             <strong>events</strong> rather than edits — "this set happened", "this
@@ -204,7 +201,6 @@
 
         <section aria-labelledby="honest-h">
           <div class="section__head">
-            <p class="eyebrow">The catch</p>
             <h2 id="honest-h">What you give up</h2>
             <p>
               A pull returns everything after your cursor in one response — fine for
@@ -215,16 +211,33 @@
               and pretending otherwise would be a lie.
             </p>
             <p>
-              <a href="./#limits">The full list of what it doesn't do →</a>
+              <a href="./#limits">The full list of what it doesn't do</a>
             </p>
           </div>
         </section>
       </div>
+      <aside class="shell family-wrap" aria-labelledby="family-h">
+        <h2 id="family-h">From the same app</h2>
+        <div class="family">
+          <div class="kin kin--sync" aria-current="page">
+            <h3><a href="./">durable-sync</a></h3>
+            <p>Offline-first sync: an op log on the server, a durable outbox on the client.</p>
+          </div>
+          <div class="kin kin--auth">
+            <h3><a href="https://isaacrowntree.com/durable-auth/">durable-auth</a></h3>
+            <p>Passkey sign-in for Workers, kept in one Durable Object.</p>
+          </div>
+          <div class="kin kin--app">
+            <h3><a href="https://isaacrowntree.github.io/rampset/">Rampset</a></h3>
+            <p>The offline-first barbell app both libraries were extracted from, and where they run in production. <a href="https://liftlog.zackdesign.biz">Try it</a>.</p>
+          </div>
+        </div>
+      </aside>
     </main>
 
     <footer class="foot-wrap">
       <div class="shell foot">
-        <span>MIT · Isaac Rowntree</span>
+        <span>MIT licence. Made by Isaac Rowntree.</span>
         <nav aria-label="Elsewhere">
           <a href="./">Home</a>
           <a href="https://github.com/isaacrowntree/durable-sync">GitHub</a>

@@ -28,14 +28,14 @@
     />
     <meta name="twitter:card" content="summary_large_image" />
 
-    <meta name="theme-color" content="#0b1020" />
+    <meta name="theme-color" content="#f6f8f4" />
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..800&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400..700&family=Atkinson+Hyperlegible+Next:ital,wght@0,400..800;1,400..800&display=swap"
     />
     <link rel="stylesheet" href="style.css" />
 
@@ -74,11 +74,11 @@
       <div class="shell">
         <section class="hero hero--split">
           <div class="hero__pitch">
-            <p class="eyebrow">A primitive, not a database</p>
             <h1>Offline-first sync for Cloudflare Durable&nbsp;Objects</h1>
             <p class="hero__lede">
               An append-only op log on the server, a durable outbox on the client.
               <strong>No Postgres, no container, no WebSocket.</strong>
+              A primitive, not a database.
             </p>
 
             <div class="hero__actions">
@@ -87,10 +87,15 @@
                 <span id="install-cmd">npm i durable-sync</span>
                 <button type="button" id="copy" data-copied="false">Copy</button>
               </div>
-              <a class="ghost-link" href="https://www.npmjs.com/package/durable-sync">View on npm ↗</a>
             </div>
 
-            <ul class="facts">
+            <ul class="links">
+              <li><a href="https://www.npmjs.com/package/durable-sync">View on npm</a></li>
+              <li><a href="https://github.com/isaacrowntree/durable-sync">Source on GitHub</a></li>
+              <li><a href="https://isaacrowntree.github.io/rampset/">Running in Rampset</a></li>
+            </ul>
+
+            <ul class="facts" aria-label="Package facts">
               <li>Zero dependencies</li>
               <li>42 kB unpacked</li>
               <li>TypeScript</li>
@@ -99,46 +104,49 @@
           </div>
 
           <div class="hero__demo" aria-labelledby="demo-h">
-            <h2 id="demo-h" class="eyebrow">The whole idea, running</h2>
+            <h2 id="demo-h" class="demo__title">The whole idea, running</h2>
 
-            <div class="journal">
-              <div class="journal__bar">
+            <div class="demo">
+              <div class="demo__controls">
+                <button type="button" class="btn btn--primary" id="write">Write an op</button>
+                <button type="button" class="btn" id="net" data-online="true" aria-pressed="false">
+                  <span class="btn__dot" aria-hidden="true"></span>
+                  <span id="net-label">Online</span>
+                </button>
+              </div>
+
+              <div class="demo__head">
                 <span>Journal</span>
-                <div class="journal__controls">
-                  <button type="button" class="jbtn" id="write">Write an op</button>
-                  <button type="button" class="jbtn" id="net" data-online="true" aria-pressed="false">
-                    <span class="jbtn__dot" aria-hidden="true"></span>
-                    <span id="net-label">Online</span>
-                  </button>
+                <span class="demo__sim">The Durable Object's log</span>
+              </div>
+              <div class="printout">
+                <div class="printout__paper" id="log" role="log" aria-live="polite" aria-label="Acknowledged ops">
+                  <p class="journal__empty" id="log-empty">Nothing acknowledged yet.</p>
                 </div>
               </div>
 
-              <div class="journal__pane journal__pane--log" id="log" role="log" aria-live="polite" aria-label="Acknowledged ops">
-                <p class="journal__empty" id="log-empty">Nothing acknowledged yet.</p>
-              </div>
-
-              <div class="journal__split">
-                <span>Outbox</span>
-                <b id="outbox-count">0 queued</b>
-              </div>
-
-              <div class="journal__pane journal__pane--outbox" id="outbox" aria-live="polite" aria-label="Pending ops">
-                <p class="journal__empty" id="outbox-empty">Empty. Every write has landed.</p>
+              <div class="tray">
+                <div class="tray__head">
+                  <span>Outbox, on the device</span>
+                  <b id="outbox-count">0 queued</b>
+                </div>
+                <div class="tray__body" id="outbox" aria-live="polite" aria-label="Pending ops">
+                  <p class="journal__empty" id="outbox-empty">Empty. Every write has landed.</p>
+                </div>
               </div>
             </div>
 
-            <p class="journal__note">
-              Go offline and keep writing — ops queue with no sequence number,
-              because nothing has confirmed them. Come back online and the outbox
-              drains: the journal assigns each op a <code>seq</code>, and only then
-              is it safe to forget locally.
+            <p class="demo__note">
+              Go offline and keep writing: ops queue with no sequence number, because
+              nothing has confirmed them. Come back online and the outbox drains. The
+              journal assigns each op a <code>seq</code>, and only then is it safe to
+              forget locally.
             </p>
           </div>
         </section>
 
         <section id="why" aria-labelledby="why-h">
           <div class="section__head">
-            <p class="eyebrow">Why this exists</p>
             <h2 id="why-h">The platform already gives you the hard part</h2>
             <p>
               Every credible offline-first engine — Electric, PowerSync, InstantDB —
@@ -153,7 +161,7 @@
             </p>
           </div>
 
-          <ul class="claims">
+          <ul class="points">
             <li>
               <h3>Small on purpose</h3>
               <p>It is a primitive, not a database. You bring the storage and the meaning.</p>
@@ -187,13 +195,12 @@
 
         <section id="start" aria-labelledby="start-h">
           <div class="section__head">
-            <p class="eyebrow">Quickstart</p>
             <h2 id="start-h">Two halves, one afternoon</h2>
           </div>
 
           <div class="steps">
             <div class="step">
-              <p class="step__label">Server — the log</p>
+              <h3>Server: the log</h3>
               <p>
                 Extend the Durable Object and export it. One instance per user is the
                 whole design: <code>idFromName(userKey)</code> buys serialized writes
@@ -208,7 +215,7 @@
   <span class="tok-k">const</span> journal = env.JOURNAL.<span class="tok-f">get</span>(env.JOURNAL.<span class="tok-f">idFromName</span>(userKey));
   <span class="tok-k">return</span> Response.<span class="tok-f">json</span>(<span class="tok-k">await</span> journal.<span class="tok-f">push</span>(ops));
 }</code></pre>
-              <p style="margin-top: 1rem; font-size: 0.88rem">
+              <p class="small-note">
                 <code>pull</code> and <code>putSnapshot</code> are two more one-liners.
                 Note what you do <strong>not</strong> forward: <code>reset()</code>. The
                 DO has it, but a client reaches exactly the methods you wire to a route —
@@ -218,7 +225,7 @@
             </div>
 
             <div class="step">
-              <p class="step__label">Client — the outbox</p>
+              <h3>Client: the outbox</h3>
               <p>
                 Commit locally, queue the op, let the network catch up. <code>apply</code>
                 must be idempotent: an op can arrive more than once.
@@ -248,7 +255,7 @@
 <span class="tok-k">await</span> db.notes.<span class="tok-f">put</span>(note);
 <span class="tok-k">await</span> sync.<span class="tok-f">enqueue</span>({ opId: note.id, kind: <span class="tok-s">"note"</span>, payload: note });
 <span class="tok-k">void</span> sync.<span class="tok-f">now</span>({ force: <span class="tok-k">true</span> }); <span class="tok-c">// never await on a user path</span></code></pre>
-              <p style="margin-top: 1rem; font-size: 0.88rem">
+              <p class="small-note">
                 The outbox <strong>must be durable</strong>. Until a push is
                 acknowledged it may hold the only copy of a write, and memory does not
                 survive iOS killing a backgrounded PWA. Put it in IndexedDB.
@@ -259,8 +266,7 @@
 
         <section id="incidents" aria-labelledby="inc-h">
           <div class="section__head">
-            <p class="eyebrow">Four incidents</p>
-            <h2 id="inc-h">Every one of these shipped to production</h2>
+            <h2 id="inc-h">Four incidents, every one shipped to production</h2>
             <p>
               These are the reason the package exists. Each is a real bug from the app
               this was extracted from — and each one looked completely fine from the
@@ -336,17 +342,17 @@
 
         <section id="limits" aria-labelledby="lim-h">
           <div class="section__head">
-            <p class="eyebrow">What this does not do</p>
-            <h2 id="lim-h">Being clear so you don't find out later</h2>
+            <h2 id="lim-h">What this does not do</h2>
+            <p>Being clear so you don't find out later.</p>
           </div>
 
-          <ul class="limits">
-            <li><span><b>Conflict resolution.</b> Last writer wins per record, and <code>apply</code> is yours.</span></li>
-            <li><span><b>Pagination.</b> A pull returns everything after the cursor in one response. Fine for thousands of ops; not millions. Snapshots fold the cold start, but the tail is still one response.</span></li>
-            <li><span><b>Live push.</b> No WebSocket, so the other device converges on its next foreground, not instantly.</span></li>
-            <li><span><b>Auth.</b> Put it behind whatever you already use — or its sister library <a href="https://isaacrowntree.com/durable-auth/">durable-auth</a>, passkey sign-in in one more Durable Object. The key you address the DO with is your isolation boundary.</span></li>
-            <li><span><b>Multi-tenancy per instance.</b> <code>createSync</code> is single-tenant — one instance per identity, memoized.</span></li>
-            <li><span><b>Background sync.</b> Safari has none. Nothing runs while the app is closed, and pretending otherwise would be a lie.</span></li>
+          <ul class="limits limits--no">
+            <li><b>Conflict resolution.</b> Last writer wins per record, and <code>apply</code> is yours.</li>
+            <li><b>Pagination.</b> A pull returns everything after the cursor in one response. Fine for thousands of ops; not millions. Snapshots fold the cold start, but the tail is still one response.</li>
+            <li><b>Live push.</b> No WebSocket, so the other device converges on its next foreground, not instantly.</li>
+            <li><b>Auth.</b> Put it behind whatever you already use — or its sister library <a href="https://isaacrowntree.com/durable-auth/">durable-auth</a>, passkey sign-in in one more Durable Object. The key you address the DO with is your isolation boundary.</li>
+            <li><b>Multi-tenancy per instance.</b> <code>createSync</code> is single-tenant — one instance per identity, memoized.</li>
+            <li><b>Background sync.</b> Safari has none. Nothing runs while the app is closed, and pretending otherwise would be a lie.</li>
           </ul>
 
           <div class="escape">
@@ -355,41 +361,65 @@
               <a href="https://zero.rocicorp.dev/">Zero</a>,
               <a href="https://electric.ax/">Electric</a>,
               <a href="https://www.powersync.com/">PowerSync</a> — and the Postgres that
-              comes with it. <a href="vs.html">Here's an honest comparison ↗</a>
+              comes with it. <a href="vs.html">Read the honest comparison</a>.
             </p>
           </div>
         </section>
 
         <section id="prior-art" aria-labelledby="art-h">
           <div class="section__head">
-            <p class="eyebrow">Prior art</p>
-            <h2 id="art-h">Worth reading first</h2>
+            <h2 id="art-h">Prior art worth reading first</h2>
           </div>
 
-          <div class="art">
-            <div class="art__row">
-              <a class="art__name" href="https://github.com/cloudflare/partykit/tree/main/packages/partysync">partysync</a>
-              <p class="art__note">
+          <div class="rows">
+            <div class="rows__row">
+              <a class="rows__name" href="https://github.com/cloudflare/partykit/tree/main/packages/partysync">partysync</a>
+              <p class="rows__note">
                 Cloudflare's own, and the closest thing to this. Delta sync over a
                 WebSocket, with an IndexedDB read cache — so it shows last-known state
                 offline, it just has no write queue. Its README files that under a
                 heading called <em>"Maybe won't do."</em> This does it.
               </p>
             </div>
-            <div class="art__row">
-              <a class="art__name" href="https://github.com/aspen-cloud/triplit">Triplit</a>
-              <p class="art__note">
+            <div class="rows__row">
+              <a class="rows__name" href="https://github.com/aspen-cloud/triplit">Triplit</a>
+              <p class="rows__note">
                 Had a Durable Object adapter. Unmaintained since September 2025 — not
                 archived, but nothing merged or released since. Still worth reading.
               </p>
             </div>
-            <div class="art__row">
-              <a class="art__name" href="https://yjs.dev/">Yjs</a>
-              <p class="art__note">A real CRDT. Use it if you genuinely need merge.</p>
+            <div class="rows__row">
+              <a class="rows__name" href="https://yjs.dev/">Yjs</a>
+              <p class="rows__note">A real CRDT. Use it if you genuinely need merge.</p>
             </div>
-            <div class="art__row">
-              <a class="art__name" href="https://automerge.org/">Automerge</a>
-              <p class="art__note">Also a real CRDT, with a different set of trade-offs.</p>
+            <div class="rows__row">
+              <a class="rows__name" href="https://automerge.org/">Automerge</a>
+              <p class="rows__note">Also a real CRDT, with a different set of trade-offs.</p>
+            </div>
+          </div>
+        </section>
+
+        <section id="related" aria-labelledby="rel-h">
+          <div class="section__head">
+            <h2 id="rel-h">From the same app</h2>
+            <p>
+              Both libraries were extracted from Rampset, an offline-first barbell app,
+              where they run in production.
+            </p>
+          </div>
+
+          <div class="family">
+            <div class="kin kin--sync" aria-current="page">
+              <h3>durable-sync</h3>
+              <p>Offline-first sync: an op log on the server, a durable outbox on the client. You're reading it.</p>
+            </div>
+            <div class="kin kin--auth">
+              <h3><a href="https://isaacrowntree.com/durable-auth/">durable-auth</a></h3>
+              <p>Passkey sign-in in one more Durable Object. This library deliberately has no auth; that's the auth.</p>
+            </div>
+            <div class="kin kin--app">
+              <h3><a href="https://isaacrowntree.github.io/rampset/">Rampset</a></h3>
+              <p>The offline-first barbell app both libraries were extracted from, and where they run in production. <a href="https://liftlog.zackdesign.biz">Try it</a>.</p>
             </div>
           </div>
         </section>
@@ -398,7 +428,7 @@
 
     <footer class="foot-wrap">
       <div class="shell foot">
-        <span>MIT · Isaac Rowntree</span>
+        <span>MIT licence. Made by Isaac Rowntree.</span>
         <nav aria-label="Elsewhere">
           <a href="https://github.com/isaacrowntree/durable-sync">GitHub</a>
           <a href="https://www.npmjs.com/package/durable-sync">npm</a>

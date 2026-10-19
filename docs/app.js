@@ -50,7 +50,8 @@
 
   function row(op) {
     const el = document.createElement("div");
-    el.className = `op op--${op.state}`;
+    /* Green-bar paper: bands keyed to seq, so they stay put as the log scrolls. */
+    el.className = `op op--${op.state}${op.seq !== null && op.seq % 2 === 1 ? " op--band" : ""}`;
     el.innerHTML = `
       <span class="op__seq">${op.seq === null ? "·" : String(op.seq).padStart(3, "0")}</span>
       <span class="op__kind">${op.kind}</span>
@@ -85,6 +86,7 @@
 
     const n = pending.length;
     outboxCount.textContent = n === 0 ? "0 queued" : `${n} queued`;
+    outboxCount.dataset.empty = String(n === 0);
   }
 
   let uid = 0;
@@ -127,6 +129,9 @@
     scripted = false;
     timers.forEach(clearTimeout);
     timers = [];
+    /* A flush the intro started may be parked on a timer we just cleared; it
+       will never resume, so don't let it hold the flushing flag forever. */
+    flushing = false;
   }
 
   netBtn.addEventListener("click", () => {
