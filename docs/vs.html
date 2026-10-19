@@ -209,7 +209,8 @@
             <p>
               A pull returns everything after your cursor in one response — fine for
               thousands of ops, not for millions. There's no live push, so the other
-              device learns about a write on its next foreground. There's no auth. And
+              device learns about a write on its next foreground. There's no auth (pair it
+              with <a href="https://isaacrowntree.com/durable-auth/">durable-auth</a>). And
               nothing runs while the app is closed, because Safari has no Background Sync
               and pretending otherwise would be a lie.
             </p>

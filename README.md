@@ -264,7 +264,10 @@ Being clear so you don't adopt it and find out:
 - **No live push.** No WebSocket, so the other device converges on its next
   foreground — not instantly. That's the trade for working in a basement.
 - **No auth.** Put it behind whatever you already use. The DO is addressed by
-  whatever key you choose; that key is your isolation boundary.
+  whatever key you choose; that key is your isolation boundary. Its sister
+  library [durable-auth](https://github.com/isaacrowntree/durable-auth) is
+  passkey sign-in in one more Durable Object, and its session's account id is
+  the natural key.
 - **One instance per identity.** `createSync` is single-tenant: the in-flight
   guard and the throttle live in the closure. If your app has several identities
   on one device, create one instance per identity and memoize it — a fresh
@@ -280,15 +283,17 @@ If you need any of those, you want a real sync engine —
 ## Who uses it
 
 [Rampset](https://github.com/isaacrowntree/rampset) — an offline-first barbell
-training log on Cloudflare Workers, Access and R2. It's where this was
+training log on Cloudflare Workers, Durable Objects and R2, with passkey
+sign-in from [durable-auth](https://github.com/isaacrowntree/durable-auth). It's where this was
 extracted from, and it's what the four warnings above are scar tissue from: a
 real workout was destroyed by the `res.ok` one, in production, before it was
 understood.
 
 Rampset runs 0.3: its API routes call `push`, `pull` and `opsByKind` on the
-journal over RPC. It keeps what a sync library can't have — what its ops
-*mean*, and what applying one does to its database — and this package owns the
-transport.
+journal over RPC, keyed by the account durable-auth signed in. It keeps what a
+sync library can't have — what its ops *mean*, and what applying one does to
+its database — and this package owns the transport. Try it at
+[liftlog.zackdesign.biz](https://liftlog.zackdesign.biz).
 
 ## Prior art
 

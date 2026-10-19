@@ -45,7 +45,7 @@ Install: `npm i durable-sync`. Two entry points: `durable-sync/server` and `dura
 
 ## What it does not do
 
-No conflict resolution (last writer wins per record). No pagination (a pull returns everything after the cursor; snapshots fold the cold start, but the tail is still one response). No live push (converges on next foreground). No auth. One `createSync` instance per identity. Nothing runs while the app is closed — Safari has no Background Sync.
+No conflict resolution (last writer wins per record). No pagination (a pull returns everything after the cursor; snapshots fold the cold start, but the tail is still one response). No live push (converges on next foreground). No auth — pair it with durable-auth (https://isaacrowntree.com/durable-auth/), passkey sign-in in one Durable Object. One `createSync` instance per identity. Nothing runs while the app is closed — Safari has no Background Sync.
 
 If you need those, use a real sync engine — Zero, Electric, or PowerSync — and the Postgres that comes with it. If you need merge, use a CRDT: Yjs or Automerge.
 

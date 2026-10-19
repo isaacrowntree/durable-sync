@@ -344,7 +344,7 @@
             <li><span><b>Conflict resolution.</b> Last writer wins per record, and <code>apply</code> is yours.</span></li>
             <li><span><b>Pagination.</b> A pull returns everything after the cursor in one response. Fine for thousands of ops; not millions. Snapshots fold the cold start, but the tail is still one response.</span></li>
             <li><span><b>Live push.</b> No WebSocket, so the other device converges on its next foreground, not instantly.</span></li>
-            <li><span><b>Auth.</b> Put it behind whatever you already use. The key you address the DO with is your isolation boundary.</span></li>
+            <li><span><b>Auth.</b> Put it behind whatever you already use — or its sister library <a href="https://isaacrowntree.com/durable-auth/">durable-auth</a>, passkey sign-in in one more Durable Object. The key you address the DO with is your isolation boundary.</span></li>
             <li><span><b>Multi-tenancy per instance.</b> <code>createSync</code> is single-tenant — one instance per identity, memoized.</span></li>
             <li><span><b>Background sync.</b> Safari has none. Nothing runs while the app is closed, and pretending otherwise would be a lie.</span></li>
           </ul>
@@ -403,6 +403,8 @@
           <a href="https://github.com/isaacrowntree/durable-sync">GitHub</a>
           <a href="https://www.npmjs.com/package/durable-sync">npm</a>
           <a href="vs.html">Compare</a>
+          <a href="https://isaacrowntree.com/durable-auth/">durable-auth</a>
+          <a href="https://isaacrowntree.github.io/rampset/">Rampset</a>
           <a href="llms.txt">llms.txt</a>
         </nav>
       </div>
