@@ -44,6 +44,9 @@ export interface SyncOptions extends TransportOptions {
 const DEFAULT_MIN_INTERVAL = 10_000;
 const DEFAULT_POLL = 5 * 60_000;
 const UNREACHABLE = "Couldn't reach the sync journal";
+const FULL = "The sync journal is full, so new changes stay on this device";
+const refused = (n: number) =>
+  `The sync journal refused ${n} change${n === 1 ? "" : "s"} as too large or malformed`;
 
 export interface SyncNowOptions {
   /** Skip the throttle — for a write that just happened and shouldn't wait
@@ -119,19 +122,26 @@ export function createSync(opts: SyncOptions): Sync {
 
   async function run(): Promise<number> {
     const pushed = await transport.push();
+    // Reached, but not everything landed: worth saying why, not "unreachable".
+    const pushError = pushed.full ? FULL : pushed.rejected ? refused(pushed.rejected) : undefined;
+    const settle = (reached: boolean) =>
+      record(
+        !reached
+          ? { ...snapshot, lastError: UNREACHABLE }
+          : pushError
+            ? { lastOkAt: now(), lastError: pushError }
+            : { lastOkAt: now() },
+      );
+    const pushReached = pushed.ok || !!pushed.full;
 
     if (!(await canPull())) {
       // A clean push is as synced as we can honestly claim right now.
-      record(pushed.ok ? { lastOkAt: now() } : { ...snapshot, lastError: UNREACHABLE });
+      settle(pushReached);
       return 0;
     }
 
     const pulled = await transport.pull();
-    record(
-      pushed.ok && pulled.ok
-        ? { lastOkAt: now() }
-        : { ...snapshot, lastError: UNREACHABLE },
-    );
+    settle(pushReached && pulled.ok);
     return pulled.applied;
   }
 

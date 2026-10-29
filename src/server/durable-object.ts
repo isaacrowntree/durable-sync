@@ -6,12 +6,14 @@
 
 import { DurableObject } from "cloudflare:workers";
 import {
+  DEFAULT_LIMITS,
   SqlOpStore,
   handlePush,
   handlePull,
   handleReset,
   handleOpsByKind,
   handleSnapshot,
+  type JournalLimits,
   type JournalOp,
   type PushResult,
   type PullResult,
@@ -44,6 +46,8 @@ import {
  */
 export class SyncJournal<Env = unknown> extends DurableObject<Env> {
   protected store: SqlOpStore;
+  /** What this journal will take — see JournalLimits. Override to change. */
+  protected limits: JournalLimits = DEFAULT_LIMITS;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -54,13 +58,13 @@ export class SyncJournal<Env = unknown> extends DurableObject<Env> {
 
   /** Append ops. Idempotent by `opId`; returns the opIds the log now holds. */
   push(ops: JournalOp[]): PushResult {
-    return handlePush(this.store, ops ?? []);
+    return handlePush(this.store, ops ?? [], this.limits);
   }
 
-  /** Everything after `since`. Pass `withSnapshot` on a cold start (`since` 0)
+  /** Ops after `since`, a page at a time (`more` says there's another). Pass `withSnapshot` on a cold start (`since` 0)
    * to get `{ snapshot, ops }` where `ops` is the tail — see the client. */
   pull(since: number, withSnapshot = false): PullResult {
-    return handlePull(this.store, Number(since) || 0, withSnapshot);
+    return handlePull(this.store, Number(since) || 0, withSnapshot, this.limits);
   }
 
   /** Store a client's fold of the log. Refused if it's stale — see

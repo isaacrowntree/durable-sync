@@ -37,6 +37,17 @@ export interface OpStore {
   /** The assigned seq, or null when opId already exists. */
   insert(op: JournalOp): number | null;
   since(seq: number): StoredOp[];
+  /** Ops after `seq`, at most `maxOps` of them and — past the first —
+   * at most `maxBytes` of payload. `more` says the log goes on. Optional:
+   * without it a pull returns everything after `seq`. */
+  page?(seq: number, maxOps: number, maxBytes: number): { ops: StoredOp[]; more: boolean };
+  /** Ops of one kind. Optional: without it, `since(0)` is filtered. */
+  byKind?(kind: string): StoredOp[];
+  /** Whether the log holds this opId. Optional, with `bytes`. */
+  has?(opId: string): boolean;
+  /** What the log holds, in bytes (opId + kind + JSON payload, UTF-8).
+   * Optional: without it, `maxJournalBytes` isn't enforced. */
+  bytes?(): number;
   maxSeq(): number;
   /** Drop every op and start a new epoch. Maintenance only — see handleReset. */
   clear(): number;
@@ -45,6 +56,39 @@ export interface OpStore {
   readSnapshot(): Snapshot | null;
   writeSnapshot(snap: Snapshot): void;
 }
+
+/** What one journal will take. Anyone who can sign up can push, so every
+ * dimension a client controls is bounded. Override `limits` on your
+ * SyncJournal subclass to change them. */
+export interface JournalLimits {
+  maxOpIdLength: number;
+  maxKindLength: number;
+  /** One op's payload, as UTF-8 JSON. Durable Object SQLite rows top out at
+   * 2 MB, so an op much bigger than this would fail at the insert anyway. */
+  maxOpBytes: number;
+  /** Ops considered per push. The rest stay in the client's outbox for the
+   * next one. */
+  maxPushOps: number;
+  /** The whole log. Past it, pushes are refused with `full` and the client's
+   * outbox keeps them. */
+  maxJournalBytes: number;
+  /** One pull page. A cold start on a long log takes several. */
+  maxPullOps: number;
+  maxPullBytes: number;
+}
+
+export const DEFAULT_LIMITS: JournalLimits = Object.freeze({
+  maxOpIdLength: 256,
+  maxKindLength: 128,
+  maxOpBytes: 256 * 1024,
+  maxPushOps: 1000,
+  maxJournalBytes: 256 * 1024 * 1024,
+  maxPullOps: 5000,
+  maxPullBytes: 4 * 1024 * 1024,
+});
+
+const utf8 = new TextEncoder();
+const byteLength = (s: string) => utf8.encode(s).byteLength;
 
 export interface PushResult {
   seq: number;
@@ -59,22 +103,57 @@ export interface PushResult {
    * stored and the other refused, and when one was stored and the other was a
    * duplicate — and those need opposite handling. */
   stored: string[];
+  /** opIds this journal will never take as sent — too big, an overlong id or
+   * kind, a payload that won't serialise. Resending can't help, so the client
+   * hands them to `onRejected` and takes them out of its outbox. An op with no
+   * usable opId at all can't be named, and is just skipped. */
+  rejected: string[];
+  /** The log is at `maxJournalBytes`. Nothing from the first op that didn't
+   * fit onwards was stored — order is kept — and the client keeps it all. */
+  full?: true;
 }
 
-export function handlePush(store: OpStore, ops: JournalOp[]): PushResult {
+export function handlePush(store: OpStore, ops: JournalOp[], limits: JournalLimits = DEFAULT_LIMITS): PushResult {
   let accepted = 0;
   const stored: string[] = [];
-  for (const op of ops ?? []) {
+  const rejected: string[] = [];
+  let full = false;
+  for (const op of (Array.isArray(ops) ? ops : []).slice(0, limits.maxPushOps)) {
     if (!op || typeof op.opId !== "string" || op.opId === "") continue;
-    if (typeof op.kind !== "string" || op.kind === "") continue;
-    if (store.insert({ opId: op.opId, kind: op.kind, payload: op.payload }) !== null) {
+    const { opId, kind } = op;
+    if (opId.length > limits.maxOpIdLength || typeof kind !== "string" || kind === "" || kind.length > limits.maxKindLength) {
+      rejected.push(opId);
+      continue;
+    }
+    let json: string;
+    try {
+      json = JSON.stringify(op.payload ?? null);
+    } catch {
+      rejected.push(opId);
+      continue;
+    }
+    const size = byteLength(json);
+    if (size > limits.maxOpBytes) {
+      rejected.push(opId);
+      continue;
+    }
+    if (store.bytes && store.bytes() + size + byteLength(opId) + byteLength(kind) > limits.maxJournalBytes) {
+      // Already held from a push whose reply got lost: still the client's to drop.
+      if (store.has?.(opId)) {
+        stored.push(opId);
+        continue;
+      }
+      full = true;
+      break;
+    }
+    if (store.insert({ opId, kind, payload: op.payload }) !== null) {
       accepted++;
     }
     // Inserted now, or already there from a push whose reply got lost. Either
     // way the log has it, so the client may drop it.
-    stored.push(op.opId);
+    stored.push(opId);
   }
-  return { seq: store.maxSeq(), accepted, stored };
+  return { seq: store.maxSeq(), accepted, stored, rejected, ...(full ? { full: true as const } : {}) };
 }
 
 export interface PullResult {
@@ -87,24 +166,40 @@ export interface PullResult {
    * tail rather than the whole log — a client that got one it can't restore
    * holds an incomplete history and must refetch without asking. */
   snapshot?: Snapshot;
+  /** There are ops past this page: pull again from `seq`. When it's set,
+   * `seq` is the last op in `ops`, not the head of the log — so a client that
+   * predates paging and just stores `seq` resumes from the right place and
+   * catches up a page per sync, rather than skipping what it wasn't sent. */
+  more?: true;
 }
 
 /** `withSnapshot` is opt-in, and only a cold-start caller (`since` 0) can use
  * one — a client mid-log already has the head. */
-export function handlePull(store: OpStore, since: number, withSnapshot = false): PullResult {
-  const from = Number.isFinite(since) && since > 0 ? since : 0;
+export function handlePull(
+  store: OpStore,
+  since: number,
+  withSnapshot = false,
+  limits: JournalLimits = DEFAULT_LIMITS,
+): PullResult {
+  const from = Number.isFinite(since) && since > 0 ? Math.floor(since) : 0;
   const epoch = store.epoch();
+
+  const after = (seq: number): Omit<PullResult, "epoch" | "snapshot"> => {
+    if (!store.page) return { ops: store.since(seq), seq: store.maxSeq() };
+    const { ops, more } = store.page(seq, limits.maxPullOps, limits.maxPullBytes);
+    return more ? { ops, seq: ops[ops.length - 1]!.seq, more: true } : { ops, seq: store.maxSeq() };
+  };
 
   if (from === 0 && withSnapshot) {
     const snap = store.readSnapshot();
     // The log is never pruned, so this is only ever an accelerator: refusing
     // the snapshot and replaying from 0 always remains correct.
     if (snap) {
-      return { snapshot: snap, ops: store.since(snap.seq), seq: store.maxSeq(), epoch };
+      return { snapshot: snap, ...after(snap.seq), epoch };
     }
   }
 
-  return { ops: store.since(from), seq: store.maxSeq(), epoch };
+  return { ...after(from), epoch };
 }
 
 export interface SnapshotResult {
@@ -146,7 +241,13 @@ export function handleSnapshot(
  * needs to (e.g. to find which records a `delete` op removed) reads them here
  * and does its own interpretation. */
 export function handleOpsByKind(store: OpStore, kind: string): { ops: StoredOp[] } {
+  if (store.byKind) return { ops: store.byKind(kind) };
   return { ops: store.since(0).filter((o) => o.kind === kind) };
+}
+
+/** What a log entry costs against `maxJournalBytes`. */
+function entryBytes(op: { opId: string; kind: string }, payloadJson: string): number {
+  return byteLength(op.opId) + byteLength(op.kind) + byteLength(payloadJson);
 }
 
 /** Empty the log and start a new epoch.
@@ -170,9 +271,35 @@ export class MemoryOpStore implements OpStore {
   private ids = new Set<string>();
   private gen = crypto.randomUUID();
   private snap: Snapshot | null = null;
+  private size = 0;
 
   epoch(): string {
     return this.gen;
+  }
+
+  has(opId: string): boolean {
+    return this.ids.has(opId);
+  }
+
+  bytes(): number {
+    return this.size;
+  }
+
+  page(seq: number, maxOps: number, maxBytes: number): { ops: StoredOp[]; more: boolean } {
+    const rest = this.since(seq);
+    const ops: StoredOp[] = [];
+    let bytes = 0;
+    for (const op of rest) {
+      const size = byteLength(JSON.stringify(op.payload ?? null));
+      if (ops.length >= maxOps || (ops.length > 0 && bytes + size > maxBytes)) break;
+      ops.push(op);
+      bytes += size;
+    }
+    return { ops, more: ops.length < rest.length };
+  }
+
+  byKind(kind: string): StoredOp[] {
+    return this.ops.filter((o) => o.kind === kind);
   }
 
   readSnapshot(): Snapshot | null {
@@ -188,6 +315,7 @@ export class MemoryOpStore implements OpStore {
     const seq = this.ops.length + 1;
     this.ops.push({ ...op, seq });
     this.ids.add(op.opId);
+    this.size += entryBytes(op, JSON.stringify(op.payload ?? null));
     return seq;
   }
 
@@ -203,6 +331,7 @@ export class MemoryOpStore implements OpStore {
     const n = this.ops.length;
     this.ops = [];
     this.ids.clear();
+    this.size = 0;
     // A fold of the log we just threw away would hand every new device the
     // state this reset existed to destroy.
     this.snap = null;
@@ -230,7 +359,15 @@ export class SqlOpStore implements OpStore {
         ts INTEGER NOT NULL
       )`,
     );
+    // opsByKind reads one kind; without this it's a scan of the whole log.
+    sql.exec(`CREATE INDEX IF NOT EXISTS ops_kind ON ops (kind)`);
     sql.exec(`CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)`);
+    // The log's size, kept as a running total so a push doesn't sum the log.
+    // A log from before this was tracked is measured once, here.
+    sql.exec(
+      `INSERT OR IGNORE INTO meta (k, v) SELECT 'bytes', CAST(COALESCE(SUM(
+        LENGTH(CAST(op_id AS BLOB)) + LENGTH(CAST(kind AS BLOB)) + LENGTH(CAST(payload AS BLOB))), 0) AS TEXT) FROM ops`,
+    );
     // Stamp a generation on first use, so a log that predates this column
     // still reports one consistently from now on.
     sql.exec(`INSERT OR IGNORE INTO meta (k, v) VALUES ('epoch', ?)`, crypto.randomUUID());
@@ -266,21 +403,58 @@ export class SqlOpStore implements OpStore {
   }
 
   insert(op: JournalOp): number | null {
-    const dup = this.sql.exec(`SELECT seq FROM ops WHERE op_id = ?`, op.opId).toArray();
-    if (dup.length > 0) return null;
+    if (this.has(op.opId)) return null;
+    const payload = JSON.stringify(op.payload ?? null);
     this.sql.exec(
       `INSERT INTO ops (op_id, kind, payload, ts) VALUES (?, ?, ?, ?)`,
       op.opId,
       op.kind,
-      JSON.stringify(op.payload ?? null),
+      payload,
       Date.now(),
+    );
+    this.sql.exec(
+      `UPDATE meta SET v = CAST(CAST(v AS INTEGER) + ? AS TEXT) WHERE k = 'bytes'`,
+      entryBytes(op, payload),
     );
     return this.maxSeq();
   }
 
-  since(seq: number): StoredOp[] {
+  has(opId: string): boolean {
+    return this.sql.exec(`SELECT 1 FROM ops WHERE op_id = ?`, opId).toArray().length > 0;
+  }
+
+  bytes(): number {
+    const rows = this.sql.exec(`SELECT v FROM meta WHERE k = 'bytes'`).toArray();
+    return Number(rows[0]?.v ?? 0) || 0;
+  }
+
+  /** Sizes first, then only the rows that fit: a page never loads more
+   * payload than it returns. */
+  page(seq: number, maxOps: number, maxBytes: number): { ops: StoredOp[]; more: boolean } {
+    const sizes = this.sql
+      .exec(`SELECT seq, LENGTH(CAST(payload AS BLOB)) AS n FROM ops WHERE seq > ? ORDER BY seq LIMIT ?`, seq, maxOps + 1)
+      .toArray();
+    let last = seq;
+    let taken = 0;
+    let bytes = 0;
+    for (const row of sizes) {
+      const size = Number(row.n);
+      if (taken >= maxOps || (taken > 0 && bytes + size > maxBytes)) break;
+      last = Number(row.seq);
+      taken++;
+      bytes += size;
+    }
+    const ops = taken === 0 ? [] : this.read(`WHERE seq > ? AND seq <= ? ORDER BY seq`, seq, last);
+    return { ops, more: taken < sizes.length };
+  }
+
+  byKind(kind: string): StoredOp[] {
+    return this.read(`WHERE kind = ? ORDER BY seq`, kind);
+  }
+
+  private read(where: string, ...bindings: unknown[]): StoredOp[] {
     return this.sql
-      .exec(`SELECT seq, op_id, kind, payload FROM ops WHERE seq > ? ORDER BY seq`, seq)
+      .exec(`SELECT seq, op_id, kind, payload FROM ops ${where}`, ...bindings)
       .toArray()
       .map((r) => ({
         seq: Number(r.seq),
@@ -288,6 +462,10 @@ export class SqlOpStore implements OpStore {
         kind: String(r.kind),
         payload: JSON.parse(String(r.payload)),
       }));
+  }
+
+  since(seq: number): StoredOp[] {
+    return this.read(`WHERE seq > ? ORDER BY seq`, seq);
   }
 
   maxSeq(): number {
@@ -299,6 +477,7 @@ export class SqlOpStore implements OpStore {
     const n = this.maxSeq();
     this.sql.exec(`DELETE FROM ops`);
     this.sql.exec(`DELETE FROM sqlite_sequence WHERE name = 'ops'`);
+    this.sql.exec(`UPDATE meta SET v = '0' WHERE k = 'bytes'`);
     // A fold of the log we just threw away would hand every new device the
     // state this reset existed to destroy.
     this.sql.exec(`DELETE FROM snapshot`);

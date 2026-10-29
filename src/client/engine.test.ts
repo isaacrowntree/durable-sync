@@ -209,3 +209,27 @@ describe("force", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2); // but a forced push gets through
   });
 });
+
+describe("refusals in the state", () => {
+  it("says the journal is full, not unreachable", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (_i: string | URL | Request, init?: RequestInit) =>
+      init?.method === "POST" ? json({ seq: 1, stored: [], rejected: [], full: true }) : ok(),
+    ));
+    const { sync } = make();
+    await sync.enqueue({ opId: "a", kind: "put", payload: {} });
+
+    await sync.now();
+    expect(sync.getState()).toEqual({ lastOkAt: 1_000_000, lastError: expect.stringContaining("full") });
+  });
+
+  it("says how many changes were refused", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (_i: string | URL | Request, init?: RequestInit) =>
+      init?.method === "POST" ? json({ seq: 1, stored: [], rejected: ["a"] }) : ok(),
+    ));
+    const { sync } = make();
+    await sync.enqueue({ opId: "a", kind: "put", payload: {} });
+
+    await sync.now();
+    expect(sync.getState().lastError).toContain("refused 1 change ");
+  });
+});

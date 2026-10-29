@@ -71,9 +71,18 @@ export interface TransportOptions {
   /** Omit and every cold start replays the whole log, which is the right
    * trade until the log is long. Nothing captures for you — see `capture()`. */
   snapshot?: SnapshotAdapter;
+  /** Ops the journal will never take as sent — too big, an overlong id or
+   * kind. Resending can't change that, and leaving them queued would send
+   * them on every sync forever, so they leave the outbox once this returns.
+   * Keep them somewhere if they matter; omit it and they're dropped, with
+   * the sync state saying so. */
+  onRejected?(rows: OutboxRow[]): Promise<void> | void;
 }
 
 const DEFAULT_TIMEOUT = 10_000;
+/** Pages per pull. A long log on a slow phone is caught up over several
+ * syncs past this, from wherever the cursor got to. */
+const MAX_PAGES = 50;
 
 /** Did this response really come from the journal?
  *
@@ -91,6 +100,10 @@ function isJournalReply<T extends { seq?: unknown }>(
 export interface PushOutcome {
   ok: boolean;
   pushed: number;
+  /** How many ops the journal refused for good — see `onRejected`. */
+  rejected?: number;
+  /** The journal is at its size limit. What it didn't take stays queued. */
+  full?: boolean;
 }
 export interface PullOutcome {
   ok: boolean;
@@ -106,6 +119,7 @@ export function createTransport(opts: TransportOptions) {
     headers,
     timeoutMs = DEFAULT_TIMEOUT,
     snapshot,
+    onRejected,
   } = opts;
 
   const requestHeaders = (extra: HeadersInit = {}): HeadersInit => ({
@@ -132,7 +146,7 @@ export function createTransport(opts: TransportOptions) {
       });
       if (!res.ok) return { ok: false, pushed: 0 };
       const reply = (await res.json().catch(() => null)) as
-        | { seq?: unknown; stored?: unknown }
+        | { seq?: unknown; stored?: unknown; rejected?: unknown; full?: unknown }
         | null;
       if (!isJournalReply(reply)) return { ok: false, pushed: 0 };
 
@@ -148,7 +162,20 @@ export function createTransport(opts: TransportOptions) {
       const drain = stored ? rows.filter((r) => stored.has(r.opId)) : rows;
 
       await outbox.remove(drain.map((r) => r.id));
-      return { ok: true, pushed: drain.length };
+
+      // Only an op the journal named, that it didn't also say it holds.
+      const refused = Array.isArray(reply.rejected) ? new Set(reply.rejected as unknown[]) : null;
+      const rejected = refused ? rows.filter((r) => refused.has(r.opId) && !stored?.has(r.opId)) : [];
+      if (rejected.length > 0) {
+        // If the app can't take them, they stay queued: better resent than lost.
+        await onRejected?.(rejected);
+        await outbox.remove(rejected.map((r) => r.id));
+      }
+
+      const outcome: PushOutcome = { ok: reply.full !== true, pushed: drain.length };
+      if (rejected.length > 0) outcome.rejected = rejected.length;
+      if (reply.full === true) outcome.full = true;
+      return outcome;
     } catch {
       // offline — the outbox flushes next time
       return { ok: false, pushed: 0 };
@@ -163,7 +190,7 @@ export function createTransport(opts: TransportOptions) {
     });
     if (!res.ok) return null;
     const body = (await res.json().catch(() => null)) as
-      | { ops?: StoredOp[]; seq?: number; epoch?: string; snapshot?: Snapshot }
+      | { ops?: StoredOp[]; seq?: number; epoch?: string; snapshot?: Snapshot; more?: boolean }
       | null;
     return isJournalReply(body) ? body : null;
   }
@@ -245,19 +272,32 @@ export function createTransport(opts: TransportOptions) {
       }
 
       let applied = 0;
-      for (const op of body.ops ?? []) {
-        try {
-          if (await apply(op)) applied++;
-        } catch {
-          // One bad op must not strand every op behind it — and must not pin
-          // the cursor here, or every later sync refetches it, throws again,
-          // and never makes progress.
+      for (let page = 1; ; page++) {
+        for (const op of body.ops ?? []) {
+          try {
+            if (await apply(op)) applied++;
+          } catch {
+            // One bad op must not strand every op behind it — and must not pin
+            // the cursor here, or every later sync refetches it, throws again,
+            // and never makes progress.
+          }
         }
+        // Keep the epoch we know when a reply omits one — writing `undefined`
+        // would make the next reply that HAS one look like a new generation and
+        // trigger a needless full replay. Written per page, so a pull cut
+        // short resumes where it got to.
+        await cursor.write({ seq: body.seq, epoch: epoch ?? current.epoch });
+
+        // A journal that predates paging never sets `more`.
+        if (body.more !== true || page >= MAX_PAGES) break;
+        const next = await fetchPull(body.seq);
+        if (!next) return { ok: false, applied };
+        // Reset mid-catch-up: the next sync sees the new epoch and replays.
+        // No progress: don't spin on a journal that keeps saying `more`.
+        if ((epoch && next.epoch && next.epoch !== epoch) || next.seq < body.seq) break;
+        if (next.more === true && next.seq === body.seq) break;
+        body = next;
       }
-      // Keep the epoch we know when a reply omits one — writing `undefined`
-      // would make the next reply that HAS one look like a new generation and
-      // trigger a needless full replay.
-      await cursor.write({ seq: body.seq, epoch: epoch ?? current.epoch });
       return { ok: true, applied };
     } catch {
       return { ok: false, applied: 0 };

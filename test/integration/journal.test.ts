@@ -187,3 +187,39 @@ describe("ops by kind", () => {
     expect((await call("GET", "/ops?kind=nothing")).ops).toHaveLength(0);
   });
 });
+
+describe("limits, on the DO's SQLite", () => {
+  it("rejects an oversized op by name and stores the rest", async () => {
+    const r = await call("POST", "/push", {
+      ops: [{ opId: "big", kind: "set.logged", payload: "x".repeat(2000) }, op("a", 100)],
+    });
+    expect(r).toMatchObject({ stored: ["a"], rejected: ["big"] });
+  });
+
+  it("refuses past the journal's size, and frees it on reset", async () => {
+    const chunk = (i: number) => ({ opId: `c${i}`, kind: "k", payload: "y".repeat(900) });
+    const r = await call("POST", "/push", { ops: Array.from({ length: 30 }, (_, i) => chunk(i)) });
+    expect(r.full).toBe(true);
+    expect(r.stored.length).toBeGreaterThan(0);
+    expect(r.stored.length).toBeLessThan(30);
+    await call("DELETE", "/reset");
+    expect((await call("POST", "/push", { ops: [chunk(99)] })).stored).toEqual(["c99"]);
+  });
+
+  it("pages a long log, and following seq visits every op", async () => {
+    await call("POST", "/push", { ops: Array.from({ length: 120 }, (_, i) => op(`p${i}`, i)) });
+    const first = await call("GET", "/?since=0");
+    expect(first).toMatchObject({ seq: 50, more: true });
+    expect(first.ops).toHaveLength(50);
+    const seen: string[] = [];
+    let since = 0;
+    for (let i = 0; i < 10; i++) {
+      const page = await call("GET", `/?since=${since}`);
+      seen.push(...page.ops.map((o: Json) => o.opId));
+      if (!page.more) break;
+      since = page.seq;
+    }
+    expect(seen).toHaveLength(120);
+    expect(new Set(seen).size).toBe(120);
+  });
+});

@@ -6,6 +6,7 @@ import {
   handleReset,
   handleOpsByKind,
   handleSnapshot,
+  DEFAULT_LIMITS,
   type JournalOp,
 } from "./journal.js";
 
@@ -230,5 +231,132 @@ describe("ops by kind", () => {
     const store = new MemoryOpStore();
     handlePush(store, [op("a")]);
     expect(handleOpsByKind(store, "delete").ops).toEqual([]);
+  });
+});
+
+/** Anyone who can sign up can push, so every dimension a client controls is
+ * bounded — and a refusal has to be one the client can act on. */
+describe("limits", () => {
+  const limits = (over: Partial<typeof DEFAULT_LIMITS>) => ({ ...DEFAULT_LIMITS, ...over });
+
+  it("rejects, by name, ops it will never take as sent", () => {
+    const store = new MemoryOpStore();
+    const big = 1n;
+    const r = handlePush(
+      store,
+      [
+        { opId: "huge", kind: "put", payload: "x".repeat(100) },
+        { opId: "x".repeat(20), kind: "put", payload: 1 },
+        { opId: "kind", kind: "k".repeat(20), payload: 1 },
+        { opId: "bigint", kind: "put", payload: { big } },
+        op("good"),
+      ],
+      limits({ maxOpBytes: 50, maxOpIdLength: 10, maxKindLength: 10 }),
+    );
+    expect(r.stored).toEqual(["good"]);
+    expect(r.rejected).toEqual(["huge", "x".repeat(20), "kind", "bigint"]);
+    expect(handlePull(store, 0).ops.map((o) => o.opId)).toEqual(["good"]);
+  });
+
+  it("measures payloads in bytes, not characters", () => {
+    const store = new MemoryOpStore();
+    // 10 characters, 40 bytes.
+    const r = handlePush(store, [{ opId: "emoji", kind: "put", payload: "😀".repeat(10) }], limits({ maxOpBytes: 30 }));
+    expect(r.rejected).toEqual(["emoji"]);
+  });
+
+  it("considers at most maxPushOps a push, leaving the rest unnamed for next time", () => {
+    const store = new MemoryOpStore();
+    const r = handlePush(store, [op("a"), op("b"), op("c")], limits({ maxPushOps: 2 }));
+    expect(r.stored).toEqual(["a", "b"]);
+    expect(r.rejected).toEqual([]);
+  });
+
+  it("stops at a full log, keeping order, and says so", () => {
+    const store = new MemoryOpStore();
+    const cap = limits({ maxJournalBytes: 30 }); // each op: 1 + 3 + 7 = 11 bytes
+    const r = handlePush(store, [op("a"), op("b"), op("c"), op("d")], cap);
+    expect(r).toMatchObject({ stored: ["a", "b"], rejected: [], full: true });
+    expect(store.bytes()).toBe(22);
+    // A later, smaller op doesn't jump the queue.
+    expect(handlePush(store, [op("c"), { opId: "e", kind: "k", payload: 0 }], cap).stored).toEqual([]);
+  });
+
+  it("still names a held op as stored when the log is full", () => {
+    const store = new MemoryOpStore();
+    const cap = limits({ maxJournalBytes: 11 });
+    handlePush(store, [op("a")], cap);
+    expect(handlePush(store, [op("a"), op("b")], cap)).toMatchObject({ stored: ["a"], full: true });
+  });
+
+  it("frees the space on reset", () => {
+    const store = new MemoryOpStore();
+    handlePush(store, [op("a")]);
+    handleReset(store);
+    expect(store.bytes()).toBe(0);
+  });
+
+  it("ignores a push that isn't a list", () => {
+    const store = new MemoryOpStore();
+    expect(handlePush(store, { length: 1, 0: op("a") } as never).stored).toEqual([]);
+  });
+});
+
+/** A pull is one RPC and one response, so a long log comes a page at a time. */
+describe("pull pages", () => {
+  const five = () => {
+    const store = new MemoryOpStore();
+    handlePush(store, ["a", "b", "c", "d", "e"].map((id) => op(id)));
+    return store;
+  };
+  const pages = (over: Partial<typeof DEFAULT_LIMITS>) => ({ ...DEFAULT_LIMITS, ...over });
+
+  it("ends a page at maxPullOps, with seq the last op sent", () => {
+    const store = five();
+    const first = handlePull(store, 0, false, pages({ maxPullOps: 2 }));
+    expect(first).toMatchObject({ seq: 2, more: true });
+    expect(first.ops.map((o) => o.opId)).toEqual(["a", "b"]);
+    const last = handlePull(store, 4, false, pages({ maxPullOps: 2 }));
+    expect(last.ops.map((o) => o.opId)).toEqual(["e"]);
+    expect(last.seq).toBe(5);
+    expect(last.more).toBeUndefined();
+  });
+
+  /** The compatibility promise: a client from before paging stores `seq` and
+   * asks from there, so following `seq` alone must visit every op. */
+  it("visits every op for a client that only follows seq", () => {
+    const store = five();
+    const seen: string[] = [];
+    let since = 0;
+    for (let i = 0; i < 10; i++) {
+      const r = handlePull(store, since, false, pages({ maxPullOps: 2 }));
+      seen.push(...r.ops.map((o) => o.opId));
+      if (r.seq === since) break;
+      since = r.seq;
+    }
+    expect(seen).toEqual(["a", "b", "c", "d", "e"]);
+  });
+
+  it("ends a page at maxPullBytes, but always sends at least one op", () => {
+    const store = five(); // payload {"n":1} is 7 bytes
+    expect(handlePull(store, 0, false, pages({ maxPullBytes: 15 })).ops).toHaveLength(2);
+    expect(handlePull(store, 0, false, pages({ maxPullBytes: 1 })).ops).toHaveLength(1);
+  });
+
+  it("pages the tail after a snapshot", () => {
+    const store = five();
+    handleSnapshot(store, { seq: 1, epoch: store.epoch(), blob: {} });
+    const r = handlePull(store, 0, true, pages({ maxPullOps: 2 }));
+    expect(r.snapshot?.seq).toBe(1);
+    expect(r.ops.map((o) => o.opId)).toEqual(["b", "c"]);
+    expect(r).toMatchObject({ seq: 3, more: true });
+  });
+});
+
+describe("opsByKind", () => {
+  it("returns only that kind, in order", () => {
+    const store = new MemoryOpStore();
+    handlePush(store, [op("a", 1, "put"), op("b", 1, "del"), op("c", 1, "put")]);
+    expect(handleOpsByKind(store, "put").ops.map((o) => o.opId)).toEqual(["a", "c"]);
   });
 });

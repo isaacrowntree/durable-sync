@@ -431,3 +431,121 @@ describe("OutboxRow", () => {
     expect(rows[0]).toHaveProperty("id");
   });
 });
+
+/** A refusal the journal says is permanent must not be resent forever — that
+ * was the wedge: one oversized op, first in the outbox, failing every push. */
+describe("ops the journal refuses for good", () => {
+  function withRejected(onRejected?: (rows: OutboxRow[]) => void | Promise<void>) {
+    const outbox = memoryOutbox();
+    const t = createTransport({ outbox, cursor: memoryCursor(), apply: async () => true, onRejected });
+    return { t, outbox };
+  }
+
+  it("hands them to onRejected and takes them out of the outbox", async () => {
+    const seen: string[] = [];
+    const { t, outbox } = withRejected((rows) => void seen.push(...rows.map((r) => r.opId)));
+    await t.enqueue({ opId: "big", kind: "put", payload: "x" });
+    await t.enqueue({ opId: "ok", kind: "put", payload: 1 });
+    vi.stubGlobal("fetch", vi.fn(async () => json({ seq: 1, accepted: 1, stored: ["ok"], rejected: ["big"] })));
+
+    expect(await t.push()).toEqual({ ok: true, pushed: 1, rejected: 1 });
+    expect(seen).toEqual(["big"]);
+    expect(await outbox.list()).toHaveLength(0);
+  });
+
+  it("keeps them queued if onRejected throws", async () => {
+    const { t, outbox } = withRejected(() => {
+      throw new Error("can't save");
+    });
+    await t.enqueue({ opId: "big", kind: "put", payload: "x" });
+    vi.stubGlobal("fetch", vi.fn(async () => json({ seq: 0, accepted: 0, stored: [], rejected: ["big"] })));
+
+    expect((await t.push()).ok).toBe(false);
+    expect((await outbox.list()).map((r) => r.opId)).toEqual(["big"]);
+  });
+
+  it("never treats an op the journal also says it holds as rejected", async () => {
+    const seen: string[] = [];
+    const { t, outbox } = withRejected((rows) => void seen.push(...rows.map((r) => r.opId)));
+    await t.enqueue({ opId: "a", kind: "put", payload: 1 });
+    vi.stubGlobal("fetch", vi.fn(async () => json({ seq: 1, accepted: 0, stored: ["a"], rejected: ["a"] })));
+
+    await t.push();
+    expect(seen).toEqual([]);
+    expect(await outbox.list()).toHaveLength(0);
+  });
+
+  it("keeps everything unstored when the journal is full", async () => {
+    const { t, outbox } = withRejected();
+    await t.enqueue({ opId: "a", kind: "put", payload: 1 });
+    await t.enqueue({ opId: "b", kind: "put", payload: 1 });
+    vi.stubGlobal("fetch", vi.fn(async () => json({ seq: 1, accepted: 1, stored: ["a"], rejected: [], full: true })));
+
+    expect(await t.push()).toEqual({ ok: false, pushed: 1, full: true });
+    expect((await outbox.list()).map((r) => r.opId)).toEqual(["b"]);
+  });
+});
+
+describe("paged pulls", () => {
+  const opAt = (seq: number) => ({ seq, opId: `o${seq}`, kind: "put", payload: {} });
+
+  it("follows `more` until caught up, saving the cursor each page", async () => {
+    const { t, cursor, applied } = harness();
+    await cursor.write({ seq: 0, epoch: "e1" });
+    const pages: Record<string, unknown> = {
+      "0": { ops: [opAt(1), opAt(2)], seq: 2, epoch: "e1", more: true },
+      "2": { ops: [opAt(3), opAt(4)], seq: 4, epoch: "e1", more: true },
+      "4": { ops: [opAt(5)], seq: 5, epoch: "e1" },
+    };
+    const fetchMock = vi.fn(async (input: string | URL | Request) =>
+      json(pages[new URL(String(input), "https://x").searchParams.get("since")!]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect(await t.pull()).toEqual({ ok: true, applied: 5 });
+    expect(applied.map((o) => o.seq)).toEqual([1, 2, 3, 4, 5]);
+    expect(await cursor.read()).toEqual({ seq: 5, epoch: "e1" });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps the pages it got when a later one fails", async () => {
+    const { t, cursor } = harness();
+    await cursor.write({ seq: 0, epoch: "e1" });
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(json({ ops: [opAt(1)], seq: 1, epoch: "e1", more: true }))
+        .mockRejectedValueOnce(new TypeError("offline")),
+    );
+
+    expect((await t.pull()).ok).toBe(false);
+    expect(await cursor.read()).toEqual({ seq: 1, epoch: "e1" });
+  });
+
+  it("stops at a reset mid-catch-up and leaves the replay to the next sync", async () => {
+    const { t, cursor, applied } = harness();
+    await cursor.write({ seq: 0, epoch: "e1" });
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(json({ ops: [opAt(1)], seq: 1, epoch: "e1", more: true }))
+        .mockResolvedValueOnce(json({ ops: [opAt(1)], seq: 1, epoch: "e2" })),
+    );
+
+    expect(await t.pull()).toEqual({ ok: true, applied: 1 });
+    expect(applied).toHaveLength(1);
+    expect(await cursor.read()).toEqual({ seq: 1, epoch: "e1" });
+  });
+
+  it("doesn't spin on a journal that says `more` without moving", async () => {
+    const { t, cursor } = harness();
+    await cursor.write({ seq: 3, epoch: "e1" });
+    const fetchMock = vi.fn(async () => json({ ops: [], seq: 3, epoch: "e1", more: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect((await t.pull()).ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});

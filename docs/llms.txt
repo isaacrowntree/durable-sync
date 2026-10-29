@@ -14,11 +14,12 @@ Install: `npm i durable-sync`. Two entry points: `durable-sync/server` and `dura
 - `apply(op)` is supplied by the caller and MUST be idempotent; an op can arrive more than once.
 - A pull carrying a new `epoch` makes the client replay from 0. This is how a reset log is survivable.
 - A push reply names the opIds the log holds (`stored`). The client drains exactly those, so an op the journal refused stays queued rather than vanishing.
+- Limits (`DEFAULT_LIMITS`, override `protected limits` on the subclass): opId 256 chars, kind 128, payload 256 KiB, 1,000 ops a push, 256 MiB a journal, pull pages of 5,000 ops / 4 MiB. An op over the per-op limits comes back in `rejected`; the client passes it to `onRejected(rows)` and drops it from the outbox. A full journal answers `full: true` and the client keeps what wasn't stored.
 - Snapshots are optional and client-captured: the journal cannot fold the log because it never reads a payload, so a client folds and the journal stores the blob opaquely. The log is never pruned, so a snapshot is only ever an accelerator.
 
 ## Server API (`durable-sync/server`)
 
-- `SyncJournal extends DurableObject` (from `cloudflare:workers`) — extend and export from your Worker. Its methods are Durable Object RPC, called on the stub, reachable only from your own Worker: `push(ops)` → `{ seq, accepted, stored }`; `pull(since, withSnapshot?)` → `{ ops, seq, epoch, snapshot? }`; `putSnapshot({ seq, epoch, blob })` → `{ ok, seq }`; `opsByKind(kind)` → `{ ops }`; `reset()` → `{ cleared, epoch }`. A client reaches exactly the methods you forward from an HTTP route; `reset()` stays private by never being routed. There is no `fetch` router on the DO.
+- `SyncJournal extends DurableObject` (from `cloudflare:workers`) — extend and export from your Worker. Its methods are Durable Object RPC, called on the stub, reachable only from your own Worker: `push(ops)` → `{ seq, accepted, stored, rejected, full? }`; `pull(since, withSnapshot?)` → `{ ops, seq, epoch, snapshot?, more? }` (a page; with `more`, `seq` is the last op sent and the client pulls again); `putSnapshot({ seq, epoch, blob })` → `{ ok, seq }`; `opsByKind(kind)` → `{ ops }`; `reset()` → `{ cleared, epoch }`. A client reaches exactly the methods you forward from an HTTP route; `reset()` stays private by never being routed. There is no `fetch` router on the DO.
 - `SqlOpStore`, `MemoryOpStore` — implementations of `OpStore`.
 - `handlePush`, `handlePull`, `handleReset`, `handleOpsByKind`, `handleSnapshot` — the pure logic, testable without a Workers runtime.
 - Address one instance per user: `ns.get(ns.idFromName(userKey))`.
@@ -45,7 +46,7 @@ Install: `npm i durable-sync`. Two entry points: `durable-sync/server` and `dura
 
 ## What it does not do
 
-No conflict resolution (last writer wins per record). No pagination (a pull returns everything after the cursor; snapshots fold the cold start, but the tail is still one response). No live push (converges on next foreground). No auth — pair it with durable-auth (https://isaacrowntree.com/durable-auth/), passkey sign-in in one Durable Object. One `createSync` instance per identity. Nothing runs while the app is closed — Safari has no Background Sync.
+No conflict resolution (last writer wins per record). No live push (converges on next foreground). No auth — pair it with durable-auth (https://isaacrowntree.com/durable-auth/), passkey sign-in in one Durable Object. One `createSync` instance per identity. Nothing runs while the app is closed — Safari has no Background Sync.
 
 If you need those, use a real sync engine — Zero, Electric, or PowerSync — and the Postgres that comes with it. If you need merge, use a CRDT: Yjs or Automerge.
 

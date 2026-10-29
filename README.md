@@ -108,6 +108,34 @@ hatch for an append-only log — but a client can reach exactly the methods you
 wire to a route and nothing else. That's the whole access model: no router in
 the DO deciding for you, just the routes you write.
 
+### Limits
+
+Anyone who can sign up can push, so the journal bounds everything a client
+controls. The defaults (`DEFAULT_LIMITS`):
+
+| | default | past it |
+|---|---|---|
+| `maxOpIdLength` / `maxKindLength` | 256 / 128 chars | op named in `rejected` |
+| `maxOpBytes` | 256 KiB of UTF-8 JSON payload | op named in `rejected` |
+| `maxPushOps` | 1,000 a push | the rest wait for the next push |
+| `maxJournalBytes` | 256 MiB a journal | `full: true`; nothing more stored, the client keeps it |
+| `maxPullOps` / `maxPullBytes` | 5,000 ops / 4 MiB a page | `more: true`; the client pulls again |
+
+Override them on your subclass:
+
+```ts
+import { DEFAULT_LIMITS, SyncJournal } from "durable-sync/server";
+
+export class Journal extends SyncJournal {
+  protected override limits = { ...DEFAULT_LIMITS, maxJournalBytes: 1024 ** 3 };
+}
+```
+
+A `rejected` op is one the journal will never take as sent, so the client
+doesn't resend it forever: it hands it to `onRejected` (keep it somewhere if it
+matters) and takes it out of the outbox. A `full` journal is different — the
+client keeps everything it didn't store and says so in its state.
+
 There's a runnable version of all of this in
 [`examples/notes`](examples/notes) — a Worker plus a browser client with a real
 IndexedDB outbox. `npm install && npm run dev`.
@@ -264,8 +292,6 @@ one way in.
 Being clear so you don't adopt it and find out:
 
 - **No conflict resolution.** Last writer wins per record, and `apply` is yours.
-- **No pagination.** `pull` returns everything after the cursor in one response.
-  Fine for thousands of ops; not for millions.
 - **No live push.** No WebSocket, so the other device converges on its next
   foreground — not instantly. That's the trade for working in a basement.
 - **No auth.** Put it behind whatever you already use. The DO is addressed by

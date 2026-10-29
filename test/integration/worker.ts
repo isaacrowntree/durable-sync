@@ -5,9 +5,12 @@
  * the DO. Deliberately unsafe: it also exposes reset, because the point here is
  * to reach every method, not to model a safe public surface. It tests `src`, so
  * a regression is caught before a publish. */
-import { SyncJournal } from "../../src/server/index.js";
+import { DEFAULT_LIMITS, SyncJournal } from "../../src/server/index.js";
 
-export class Journal extends SyncJournal {}
+/** Limits small enough to reach in a test, big enough for every other one. */
+export class Journal extends SyncJournal {
+  protected override limits = { ...DEFAULT_LIMITS, maxOpBytes: 1000, maxJournalBytes: 20_000, maxPullOps: 50 };
+}
 
 interface Env {
   JOURNAL: DurableObjectNamespace<Journal>;
