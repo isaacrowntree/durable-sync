@@ -1,9 +1,37 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 — 2026-10-29
 
-Tooling only. No API or runtime change: the built `dist/` is byte-identical to
-0.3.0's, so there is nothing to publish.
+Limits on everything a client controls, and paged pulls. Nothing to change
+in your routes or client to upgrade; both directions of a mixed rollout keep
+working.
+
+- **Op limits.** An op with an opId over 256 characters, a kind over 128, a
+  payload over 256 KiB (UTF-8 JSON) or one that won't serialise is named in a
+  new `rejected` list instead of being stored or throwing. The client passes
+  those rows to a new `onRejected(rows)` option and removes them from the
+  outbox — one bad op used to be resent first on every sync forever. If
+  `onRejected` throws, they stay queued.
+- **Journal size cap.** Past 256 MiB a push answers `full: true` and stores
+  nothing more, in order. The client keeps what wasn't stored and reports
+  "The sync journal is full" in its state. The running size is kept in
+  `meta`; an existing log is measured once the first time it's opened.
+- **At most 1,000 ops are considered a push;** the rest wait for the next.
+- **Paged pulls.** A pull returns at most 5,000 ops or 4 MiB, with
+  `more: true` when the log goes on. Then `seq` is the last op sent, not the
+  head — so a client from before this release, which just stores `seq`,
+  resumes in the right place and catches up a page per sync. This client
+  follows `more` itself (up to 50 pages a pull), saving the cursor per page.
+- **opsByKind** reads through a new index on `kind` instead of parsing the
+  whole log.
+- All of it is `DEFAULT_LIMITS`; override `protected limits` on your
+  `SyncJournal` subclass. Custom `OpStore`s gain optional `page`, `byKind`,
+  `has` and `bytes`; without them pulls aren't paged and the size cap isn't
+  enforced.
+- SECURITY.md, Dependabot, and a publish workflow whose OIDC token never
+  shares a job with dev dependencies.
+
+Tooling:
 
 - Built and type-checked with TypeScript 7, the native compiler.
 - Tests run on Vitest 5. The integration suite moves from
