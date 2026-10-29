@@ -11,3 +11,9 @@ dist/
 
 # Local Claude Code state (agent worktrees)
 .claude/
+
+# Wrangler: local state, and local secrets (.dev.vars is wrangler's .env).
+.wrangler/
+.dev.vars
+.dev.vars.*
+!.dev.vars.example

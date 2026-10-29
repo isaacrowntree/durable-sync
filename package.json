@@ -40,6 +40,9 @@
       "import": "./dist/client/index.js"
     }
   },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",

@@ -13,35 +13,30 @@ name: publish
 #     Allowed actions:      npm publish
 #
 # To release: bump the version, then push a matching tag.
-#   npm version patch && git push --follow-tags
+#   npm version minor && git push --follow-tags
+#
+# Two jobs, so the publish token never meets the dev toolchain. `build` runs
+# npm ci, the tests and the compiler — every dev dependency's code — with no
+# id-token permission, and hands over a packed tarball. `publish` holds the
+# token and runs nothing but npm itself on that tarball.
 on:
   push:
     tags: ["v*"]
+  # By hand only to retry a tag's publish: refused for anything but a v* tag.
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  publish:
+  build:
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write # required for OIDC — without it npm falls back to a token and fails
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org
-      # OIDC needs npm >= 11.5.1, and Node 22 ships npm 10.9.x — so setup-node
-      # alone is not enough. Without this npm never attempts OIDC at all: it
-      # falls through to an unauthenticated publish and fails with a confusing
-      # 404 rather than an auth error.
-      - run: npm install -g npm@latest
-      - run: npm --version
-      - run: npm ci
-      # Publishing an untested build is how a library loses trust once.
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm run build
       - name: Refuse to publish a tag that disagrees with package.json
         run: |
           tag="${GITHUB_REF_NAME#v}"
@@ -50,6 +45,35 @@ jobs:
             echo "tag v$tag != package.json $pkg"
             exit 1
           fi
-        if: startsWith(github.ref, 'refs/tags/v')
-      # No NODE_AUTH_TOKEN: the OIDC token is exchanged automatically.
-      - run: npm publish --access public
+      - run: npm ci
+      # Publishing an untested build is how a library loses trust once.
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm pack
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: package
+          path: durable-sync-*.tgz
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # required for OIDC — without it npm falls back to a token and fails
+    steps:
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      # OIDC needs npm >= 11.5.1, and Node's bundled npm may be older. Pinned:
+      # this job holds the publish token, so nothing in it floats.
+      - run: npm install -g npm@12.2.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: package
+      # No NODE_AUTH_TOKEN: the OIDC token is exchanged automatically. No
+      # checkout and no npm ci: a tarball has no lifecycle scripts to run.
+      - run: npm publish ./durable-sync-*.tgz --access public
