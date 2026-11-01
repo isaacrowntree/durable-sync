@@ -1,11 +1,12 @@
 export {
   handlePush,
   handlePull,
-  handleReset,
+  handleErase,
   handleOpsByKind,
   handleSnapshot,
   MemoryOpStore,
   DEFAULT_LIMITS,
+  PUSH_REFUSE_FACTOR,
   SqlOpStore,
   type JournalOp,
   type JournalLimits,

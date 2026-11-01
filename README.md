@@ -80,7 +80,8 @@ Durable Object RPC: you call them on the stub, typed, with no request-building
 in between.
 
 ```ts
-// The route your client hits. Forward each method you want a client to reach.
+// The route your client hits. Forward each method you want a client to reach,
+// by name — never `journal[action]()` on whatever the request asked for.
 const journalFor = (req: Request) =>
   env.JOURNAL.get(env.JOURNAL.idFromName(userKeyFrom(req)));
 
@@ -103,10 +104,20 @@ export async function PUT(req: Request) {
 }
 ```
 
-Note what you did **not** forward: `reset()`. The DO has it — it's the escape
-hatch for an append-only log — but a client can reach exactly the methods you
-wire to a route and nothing else. That's the whole access model: no router in
-the DO deciding for you, just the routes you write.
+A client can reach exactly the methods you wire to a route and nothing else.
+That's the whole access model: no router in the DO deciding for you, just the
+routes you write.
+
+The DO has one more method, and it is the one you never forward:
+`eraseJournal({ confirm: "erase" })` empties the log, drops its snapshot and
+starts a new epoch. It's the escape hatch for an append-only log and the way to
+delete an account's data, and it can't be undone. It throws without that exact
+argument, so a route that dispatches by name can't reach it on a client's
+request. Call it from your own maintenance or account-deletion code:
+
+```ts
+await env.JOURNAL.get(env.JOURNAL.idFromName(userId)).eraseJournal({ confirm: "erase" });
+```
 
 ### Limits
 
@@ -117,7 +128,7 @@ controls. The defaults (`DEFAULT_LIMITS`):
 |---|---|---|
 | `maxOpIdLength` / `maxKindLength` | 256 / 128 chars | op named in `rejected` |
 | `maxOpBytes` | 256 KiB of UTF-8 JSON payload | op named in `rejected` |
-| `maxPushOps` | 1,000 a push | the rest wait for the next push |
+| `maxPushOps` | 1,000 a push | the rest wait for the next push; past 4× this, the push is refused unread with `tooMany` |
 | `maxJournalBytes` | 256 MiB a journal | `full: true`; nothing more stored, the client keeps it |
 | `maxPullOps` / `maxPullBytes` | 5,000 ops / 4 MiB a page | `more: true`; the client pulls again |
 
@@ -130,6 +141,13 @@ export class Journal extends SyncJournal {
   protected override limits = { ...DEFAULT_LIMITS, maxJournalBytes: 1024 ** 3 };
 }
 ```
+
+The journal can only bound what reaches it, and by then your route has read
+and parsed the whole request body. **Cap the body size in your route** (read
+at most a few MB, answer 413 past it) — that's the one limit the journal can't
+enforce for you. The client sends at most `pushBatch` ops a push (default
+1,000) and shrinks to whatever a `tooMany` reply asks for, so a long offline
+backlog goes up in several requests rather than one huge one.
 
 A `rejected` op is one the journal will never take as sent, so the client
 doesn't resend it forever: it hands it to `onRejected` (keep it somewhere if it

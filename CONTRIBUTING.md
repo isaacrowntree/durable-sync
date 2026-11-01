@@ -22,7 +22,7 @@ that actually ships. It's an order of magnitude slower, so it's kept out of
 workflow from the Actions tab.
 
 The DO is a singleton per name and per-test storage isolation doesn't roll its
-SQLite back here, so each test starts with `DELETE /reset` for a clean log.
+SQLite back here, so each test starts with `DELETE /erase` for a clean log.
 
 ### Local setup gotcha
 

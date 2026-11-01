@@ -16,7 +16,7 @@ import {
   SqlOpStore,
   handlePush,
   handlePull,
-  handleReset,
+  handleErase,
   handleSnapshot,
   DEFAULT_LIMITS,
   type SqlLike,
@@ -110,7 +110,7 @@ describe("SqlOpStore", () => {
       const e = store.epoch();
       handleSnapshot(store, { seq: 2, epoch: e, blob: {} });
 
-      expect(handleReset(store).cleared).toBe(4);
+      expect(handleErase(store).cleared).toBe(4);
       expect(store.readSnapshot()).toBeNull();
       expect(store.maxSeq()).toBe(0);
       expect(store.epoch()).not.toBe(e);
@@ -121,7 +121,7 @@ describe("SqlOpStore", () => {
      * to destroy. */
     it("refuses a fold from a log generation that no longer exists", () => {
       const stale = store.epoch();
-      handleReset(store);
+      handleErase(store);
       handlePush(store, [op("fresh")]);
 
       expect(handleSnapshot(store, { seq: 1, epoch: stale, blob: { ghost: true } }).ok).toBe(false);
@@ -137,7 +137,7 @@ describe("SqlOpStore limits and pages", () => {
     handlePush(store, [op("a"), op("😀")]);
     // set.logged = 10 bytes, {"n":1} = 7, ids 1 and 4.
     expect(store.bytes()).toBe(10 + 7 + 1 + 10 + 7 + 4);
-    handleReset(store);
+    handleErase(store);
     expect(store.bytes()).toBe(0);
   });
 

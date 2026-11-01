@@ -21,7 +21,8 @@ op that breaks the journal for its owner.
 library has no auth: the app's route picks the Durable Object (one per
 account, `idFromName(accountId)`), and that key is the isolation boundary.
 Also out of scope: what an app's `apply` does with a payload, and which
-journal methods its routes expose (never `reset`).
+journal methods its routes expose (never `eraseJournal`), and capping the
+request body size in the route before parsing it.
 
 ## Supported versions
 
@@ -42,9 +43,11 @@ latest release before reporting.
   is demonstrably the journal's — never on `res.ok` alone, which an auth
   proxy's login page satisfies.
 - Limits (`DEFAULT_LIMITS`): opId 256 chars, kind 128, payload 256 KiB, 1,000
-  ops considered a push, 256 MiB a journal, pull pages of 5,000 ops or 4 MiB.
+  ops considered a push (more than 4,000 refused unread), 256 MiB a journal, pull pages of 5,000 ops or 4 MiB.
   Sizes are UTF-8 bytes. A full journal refuses in order and the client keeps
   what wasn't stored.
-- Epochs: `reset()` starts a new epoch, so every client replays rather than
+- Epochs: `eraseJournal()` starts a new epoch, so every client replays rather than
   holding a cursor into a log that no longer exists.
+- Erasing: `eraseJournal` throws unless passed `{ confirm: "erase" }`, so a
+  route forwarding methods by name can't empty a log on a client's request.
 - SQL: every query binds its values; nothing is built from client input.

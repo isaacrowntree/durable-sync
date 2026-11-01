@@ -19,7 +19,7 @@ IndexedDB.
 
 | File | What it is |
 |---|---|
-| `worker.js` | The whole server. Exports the journal DO and forwards three HTTP routes to its RPC methods. Note what it *doesn't* route: `reset()`. |
+| `worker.js` | The whole server. Exports the journal DO and forwards three HTTP routes to its RPC methods. Note what it *doesn't* route: `eraseJournal()`. |
 | `public/app.js` | The browser client — a durable IndexedDB outbox, and `createSync` wiring it to `/api/sync`. |
 | `public/index.html` | The page. |
 
@@ -32,8 +32,9 @@ await journal.pull(since, snapshot);  // GET  /api/sync
 await journal.putSnapshot(fold);      // PUT  /api/sync
 ```
 
-`journal.reset()` exists on the DO and is never wired to a route — that's the
-access model: a client can reach exactly what you forward.
+`journal.eraseJournal({ confirm: "erase" })` exists on the DO and is never
+wired to a route — that's the access model: a client can reach exactly what you
+forward.
 
 ## Not shown, on purpose
 

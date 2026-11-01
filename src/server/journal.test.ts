@@ -3,10 +3,11 @@ import {
   MemoryOpStore,
   handlePush,
   handlePull,
-  handleReset,
+  handleErase,
   handleOpsByKind,
   handleSnapshot,
   DEFAULT_LIMITS,
+  PUSH_REFUSE_FACTOR,
   type JournalOp,
 } from "./journal.js";
 
@@ -96,7 +97,7 @@ describe("epoch", () => {
     handlePush(store, [op("a"), op("b")]);
     const before = handlePull(store, 0).epoch;
 
-    const r = handleReset(store);
+    const r = handleErase(store);
 
     expect(r.cleared).toBe(2);
     expect(r.epoch).not.toBe(before);
@@ -106,7 +107,7 @@ describe("epoch", () => {
   it("a reset log rebuilds cleanly, and a used opId is free again", () => {
     const store = new MemoryOpStore();
     handlePush(store, [op("old")]);
-    handleReset(store);
+    handleErase(store);
 
     const after = handlePush(store, [op("old"), op("new")]);
     expect(after.accepted).toBe(2);
@@ -170,7 +171,7 @@ describe("snapshot", () => {
   it("refuses a fold of a log generation that no longer exists", () => {
     const store = filled();
     const stale = store.epoch();
-    handleReset(store);
+    handleErase(store);
     handlePush(store, [op("fresh")]);
 
     expect(handleSnapshot(store, { seq: 1, epoch: stale, blob: { ghost: true } })).toEqual({
@@ -183,7 +184,7 @@ describe("snapshot", () => {
   it("drops its snapshot on reset", () => {
     const store = filled();
     handleSnapshot(store, { seq: 3, epoch: store.epoch(), blob: {} });
-    handleReset(store);
+    handleErase(store);
     expect(store.readSnapshot()).toBeNull();
   });
 
@@ -272,6 +273,26 @@ describe("limits", () => {
     expect(r.rejected).toEqual([]);
   });
 
+  it("still takes a slice of a backlog up to PUSH_REFUSE_FACTOR times the limit", () => {
+    const store = new MemoryOpStore();
+    const ops = Array.from({ length: 2 * PUSH_REFUSE_FACTOR }, (_, i) => op(`o${i}`));
+    const r = handlePush(store, ops, limits({ maxPushOps: 2 }));
+    expect(r.stored).toEqual(["o0", "o1"]);
+    expect(r.tooMany).toBeUndefined();
+  });
+
+  /** A push the journal could never take most of isn't worked through op by
+   * op. It's refused whole — nothing stored, nothing named — and the reply
+   * says how many to send instead. */
+  it("refuses a push far past the limit unread, and says how many to send", () => {
+    const store = new MemoryOpStore();
+    handlePush(store, [op("before")]);
+    const ops = Array.from({ length: 2 * PUSH_REFUSE_FACTOR + 1 }, (_, i) => op(`o${i}`));
+    const r = handlePush(store, ops, limits({ maxPushOps: 2 }));
+    expect(r).toEqual({ seq: 1, accepted: 0, stored: [], rejected: [], tooMany: 2 });
+    expect(handlePull(store, 0).ops.map((o) => o.opId)).toEqual(["before"]);
+  });
+
   it("stops at a full log, keeping order, and says so", () => {
     const store = new MemoryOpStore();
     const cap = limits({ maxJournalBytes: 30 }); // each op: 1 + 3 + 7 = 11 bytes
@@ -292,7 +313,7 @@ describe("limits", () => {
   it("frees the space on reset", () => {
     const store = new MemoryOpStore();
     handlePush(store, [op("a")]);
-    handleReset(store);
+    handleErase(store);
     expect(store.bytes()).toBe(0);
   });
 

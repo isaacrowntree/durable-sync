@@ -4,7 +4,7 @@ import { memoryOutbox, memoryCursor } from "./adapters.js";
 import type { StoredOp } from "../server/journal.js";
 
 function harness(
-  over: { apply?: (op: StoredOp) => Promise<boolean>; snapshot?: SnapshotAdapter } = {},
+  over: { apply?: (op: StoredOp) => Promise<boolean>; snapshot?: SnapshotAdapter; pushBatch?: number } = {},
 ) {
   const outbox = memoryOutbox();
   const cursor = memoryCursor();
@@ -13,6 +13,7 @@ function harness(
     outbox,
     cursor,
     snapshot: over.snapshot,
+    pushBatch: over.pushBatch,
     apply:
       over.apply ??
       (async (op) => {
@@ -483,6 +484,106 @@ describe("ops the journal refuses for good", () => {
 
     expect(await t.push()).toEqual({ ok: false, pushed: 1, full: true });
     expect((await outbox.list()).map((r) => r.opId)).toEqual(["b"]);
+  });
+});
+
+/** The client used to send its whole outbox in one push. A long offline
+ * backlog then made one enormous request — and a journal that refuses an
+ * oversized push would have refused that client on every sync, forever. */
+describe("batched pushes", () => {
+  /** Stands in for a journal: takes at most `take` ops a push, and refuses
+   * unread a push longer than `refuseOver`. Records what each push carried. */
+  function fakeJournal({ take = Infinity, refuseOver = Infinity } = {}) {
+    const sent: string[][] = [];
+    let seq = 0;
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      const ops = (JSON.parse(String(init.body)) as { ops: { opId: string }[] }).ops;
+      sent.push(ops.map((o) => o.opId));
+      if (ops.length > refuseOver) return json({ seq, accepted: 0, stored: [], rejected: [], tooMany: refuseOver });
+      const stored = ops.slice(0, take).map((o) => o.opId);
+      seq += stored.length;
+      return json({ seq, accepted: stored.length, stored, rejected: [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    return { sent, fetchMock };
+  }
+
+  const fill = async (t: ReturnType<typeof harness>["t"], n: number) => {
+    for (let i = 0; i < n; i++) await t.enqueue({ opId: `o${i}`, kind: "put", payload: {} });
+  };
+
+  it("sends a backlog in batches, oldest first, and drains it in one sync", async () => {
+    const { t, outbox } = harness({ pushBatch: 3 });
+    await fill(t, 7);
+    const { sent } = fakeJournal();
+
+    expect(await t.push()).toEqual({ ok: true, pushed: 7 });
+    expect(sent).toEqual([["o0", "o1", "o2"], ["o3", "o4", "o5"], ["o6"]]);
+    expect(await outbox.list()).toHaveLength(0);
+  });
+
+  it("keeps going when a route takes fewer than it was sent, without reordering", async () => {
+    const { t, outbox } = harness({ pushBatch: 4 });
+    await fill(t, 5);
+    const { sent } = fakeJournal({ take: 2 });
+
+    expect(await t.push()).toEqual({ ok: true, pushed: 5 });
+    expect(sent).toEqual([["o0", "o1", "o2", "o3"], ["o2", "o3", "o4"], ["o4"]]);
+    expect(await outbox.list()).toHaveLength(0);
+  });
+
+  it("shrinks to the size a journal asks for, and drains nothing on the refusal", async () => {
+    const { t, outbox } = harness({ pushBatch: 5 });
+    await fill(t, 5);
+    const { sent } = fakeJournal({ refuseOver: 2 });
+
+    expect(await t.push()).toEqual({ ok: true, pushed: 5 });
+    expect(sent.map((b) => b.length)).toEqual([5, 2, 2, 1]);
+    expect(await outbox.list()).toHaveLength(0);
+  });
+
+  it("gives up on a journal that refuses even the size it asked for", async () => {
+    const { t, outbox } = harness({ pushBatch: 2 });
+    await fill(t, 3);
+    vi.stubGlobal("fetch", vi.fn(async () => json({ seq: 0, accepted: 0, stored: [], rejected: [], tooMany: 5 })));
+
+    expect(await t.push()).toEqual({ ok: false, pushed: 0 });
+    expect(await outbox.list()).toHaveLength(3);
+  });
+
+  it("stops when a push stores nothing, rather than resending it in a loop", async () => {
+    const { t, outbox } = harness({ pushBatch: 2 });
+    await fill(t, 3);
+    const fetchMock = vi.fn(async () => json({ seq: 0, accepted: 0, stored: [], rejected: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect(await t.push()).toEqual({ ok: true, pushed: 0 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(await outbox.list()).toHaveLength(3);
+  });
+
+  it("keeps what later batches would have sent when one fails", async () => {
+    const { t, outbox } = harness({ pushBatch: 2 });
+    await fill(t, 5);
+    let calls = 0;
+    vi.stubGlobal("fetch", vi.fn(async (_u: string, init: RequestInit) => {
+      if (++calls === 2) throw new TypeError("network down");
+      const ops = (JSON.parse(String(init.body)) as { ops: { opId: string }[] }).ops;
+      return json({ seq: 2, accepted: 2, stored: ops.map((o) => o.opId), rejected: [] });
+    }));
+
+    expect(await t.push()).toEqual({ ok: false, pushed: 2 });
+    expect((await outbox.list()).map((r) => r.opId)).toEqual(["o2", "o3", "o4"]);
+  });
+
+  it("drains at most a bounded number of pushes per sync", async () => {
+    const { t, outbox } = harness({ pushBatch: 1 });
+    await fill(t, 60);
+    const { fetchMock } = fakeJournal();
+
+    expect(await t.push()).toEqual({ ok: true, pushed: 50 });
+    expect(fetchMock).toHaveBeenCalledTimes(50);
+    expect(await outbox.list()).toHaveLength(10);
   });
 });
 

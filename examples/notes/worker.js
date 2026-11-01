@@ -2,7 +2,7 @@
  *
  * The journal is a Durable Object; this Worker is the only thing that can reach
  * it, so the surface a browser can touch is exactly the three routes below.
- * Note what isn't here: `journal.reset()`. The DO has it, nothing routes to it.
+ * Note what isn't here: `journal.eraseJournal()`. The DO has it, nothing routes to it.
  * That is the access model — expose what you forward, and nothing else. */
 import { SyncJournal } from "durable-sync/server";
 
