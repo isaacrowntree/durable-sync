@@ -217,9 +217,10 @@
 }</code></pre>
               <p class="small-note">
                 <code>pull</code> and <code>putSnapshot</code> are two more one-liners.
-                Note what you do <strong>not</strong> forward: <code>reset()</code>. The
-                DO has it, but a client reaches exactly the methods you wire to a route —
-                no router in the DO deciding for you. There's a
+                A client reaches exactly the methods you wire to a route — no router in the
+                DO deciding for you. The one you never forward,
+                <code>eraseJournal({ confirm: "erase" })</code>, refuses to run without
+                that argument. There's a
                 <a href="https://github.com/isaacrowntree/durable-sync/tree/main/examples/notes">runnable example</a>.
               </p>
             </div>

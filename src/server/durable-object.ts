@@ -10,7 +10,7 @@ import {
   SqlOpStore,
   handlePush,
   handlePull,
-  handleReset,
+  handleErase,
   handleOpsByKind,
   handleSnapshot,
   type JournalLimits,
@@ -40,9 +40,9 @@ import {
  *
  * The stub is reachable only from your own Worker, so the surface a *client*
  * can touch is whatever you forward from an HTTP route and nothing else. That
- * is the whole access model: `reset()` is as callable as `push()` here, and
- * stays private simply by never being wired to a public route. There is no
- * router in this class second-guessing you.
+ * is the whole access model, with one exception built in: `eraseJournal`, the
+ * only irreversible method, demands an argument no forwarded request carries,
+ * so a route that dispatches by name can't reach it by accident.
  */
 export class SyncJournal<Env = unknown> extends DurableObject<Env> {
   protected store: SqlOpStore;
@@ -79,9 +79,17 @@ export class SyncJournal<Env = unknown> extends DurableObject<Env> {
     return handleOpsByKind(this.store, kind ?? "");
   }
 
-  /** Empty the log and start a new epoch. The maintenance escape hatch for an
-   * append-only log: never wire it to a public route. */
-  reset(): { cleared: number; epoch: string } {
-    return handleReset(this.store);
+  /** Empty the log, drop its snapshot and start a new epoch. Cannot be undone.
+   *
+   * The escape hatch for an append-only log, and the way to delete an
+   * account's data. Named apart from the client protocol and refused without
+   * `{ confirm: "erase" }`, so a route that forwards journal methods by name —
+   * `journal[action](...)` — can't empty a log on a client's say-so. Call it
+   * from maintenance code that names it; never forward it. */
+  eraseJournal(options: { confirm: "erase" }): { cleared: number; epoch: string } {
+    if (options?.confirm !== "erase") {
+      throw new Error('durable-sync: eraseJournal needs { confirm: "erase" } — it empties the log for good');
+    }
+    return handleErase(this.store);
   }
 }

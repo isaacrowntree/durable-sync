@@ -77,12 +77,19 @@ export interface TransportOptions {
    * Keep them somewhere if they matter; omit it and they're dropped, with
    * the sync state saying so. */
   onRejected?(rows: OutboxRow[]): Promise<void> | void;
+  /** Most ops sent in one push. Default 1,000, the journal's `maxPushOps`. A
+   * bigger outbox goes in several pushes, oldest first, within one sync. A
+   * journal that considers fewer says so (`tooMany`) and this shrinks to fit. */
+  pushBatch?: number;
 }
 
 const DEFAULT_TIMEOUT = 10_000;
 /** Pages per pull. A long log on a slow phone is caught up over several
  * syncs past this, from wherever the cursor got to. */
 const MAX_PAGES = 50;
+/** Pushes per sync. A bigger backlog drains over several syncs. */
+const MAX_PUSHES = 50;
+const DEFAULT_PUSH_BATCH = 1000;
 
 /** Did this response really come from the journal?
  *
@@ -120,7 +127,9 @@ export function createTransport(opts: TransportOptions) {
     timeoutMs = DEFAULT_TIMEOUT,
     snapshot,
     onRejected,
+    pushBatch = DEFAULT_PUSH_BATCH,
   } = opts;
+  let batchSize = Math.max(1, Math.floor(pushBatch) || DEFAULT_PUSH_BATCH);
 
   const requestHeaders = (extra: HeadersInit = {}): HeadersInit => ({
     // Makes a well-behaved auth proxy answer an expired session with 401
@@ -131,10 +140,33 @@ export function createTransport(opts: TransportOptions) {
     ...headers?.(),
   });
 
-  /** Send everything queued. Failure keeps the queue intact. */
+  /** Send everything queued, a batch at a time, oldest first. Failure keeps
+   * the queue intact. */
   async function push(): Promise<PushOutcome> {
-    const rows = await outbox.list();
-    if (rows.length === 0) return { ok: true, pushed: 0 }; // nothing queued isn't a failure
+    const total: PushOutcome = { ok: true, pushed: 0 };
+    for (let round = 0; round < MAX_PUSHES; round++) {
+      const rows = (await outbox.list()).slice(0, batchSize);
+      if (rows.length === 0) return total; // nothing queued isn't a failure
+      const step = await pushBatchOf(rows);
+      total.pushed += step.pushed;
+      if (step.rejected) total.rejected = (total.rejected ?? 0) + step.rejected;
+      if (step.full) total.full = true;
+      if (step.tooMany !== undefined) {
+        const smaller = Math.max(1, Math.floor(step.tooMany));
+        // A journal that refuses even what it asked for is broken, not busy.
+        if (!(smaller < batchSize)) return { ...total, ok: false };
+        batchSize = smaller;
+        continue;
+      }
+      if (!step.ok) return { ...total, ok: false };
+      // The journal took none of it — it may take less a push than was sent,
+      // but never nothing. Stop rather than resend the same rows in a loop.
+      if (step.pushed + (step.rejected ?? 0) === 0) return total;
+    }
+    return total;
+  }
+
+  async function pushBatchOf(rows: OutboxRow[]): Promise<PushOutcome & { tooMany?: number }> {
     try {
       const res = await fetch(endpoint, {
         method: "POST",
@@ -146,9 +178,12 @@ export function createTransport(opts: TransportOptions) {
       });
       if (!res.ok) return { ok: false, pushed: 0 };
       const reply = (await res.json().catch(() => null)) as
-        | { seq?: unknown; stored?: unknown; rejected?: unknown; full?: unknown }
+        | { seq?: unknown; stored?: unknown; rejected?: unknown; full?: unknown; tooMany?: unknown }
         | null;
       if (!isJournalReply(reply)) return { ok: false, pushed: 0 };
+      // Refused unread. It names nothing as stored, so nothing drains anyway;
+      // this just makes sure of it, and hands back the size to retry at.
+      if (typeof reply.tooMany === "number") return { ok: false, pushed: 0, tooMany: reply.tooMany };
 
       // Drain only what the journal said it holds. A reply proves the journal
       // answered; it does not prove the journal took every op — it refuses one

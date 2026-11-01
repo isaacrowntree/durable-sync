@@ -24,9 +24,9 @@ const seed = () => call("POST", "/push", { ops: [op("a", 100), op("b", 102.5), o
 
 // The DO is a singleton addressed by one name, and per-test storage isolation
 // doesn't roll back its SQLite here — so start every test from a truly empty
-// log rather than trust the pool to do it. reset drops ops, snapshot, and the
+// log rather than trust the pool to do it. An erase drops ops, snapshot, and the
 // epoch, which is exactly the clean slate each test wants.
-beforeEach(() => call("DELETE", "/reset"));
+beforeEach(() => call("DELETE", "/erase"));
 
 describe("push", () => {
   it("assigns seqs and names what it stored", async () => {
@@ -138,13 +138,22 @@ describe("snapshot", () => {
   });
 });
 
-describe("reset", () => {
+describe("eraseJournal", () => {
+  it("refuses without the confirmation, and leaves the log alone", async () => {
+    await seed();
+    for (const confirm of ["", "yes", "true"]) {
+      const r = await call("DELETE", `/erase?confirm=${confirm}`);
+      expect(r.error).toMatch(/confirm/);
+    }
+    expect((await call("GET", "/?since=0")).ops).toHaveLength(3);
+  });
+
   it("clears the log, drops the snapshot, and starts a new epoch", async () => {
     await seed();
     const before = (await call("GET", "/pull?since=0")).epoch;
     await call("PUT", "/snapshot", { seq: 2, epoch: before, blob: {} });
 
-    const r = await call("DELETE", "/reset");
+    const r = await call("DELETE", "/erase");
     expect(r.cleared).toBe(3);
     expect(r.epoch).not.toBe(before);
 
@@ -158,7 +167,7 @@ describe("reset", () => {
   it("refuses a fold from the generation it just discarded", async () => {
     await seed();
     const stale = (await call("GET", "/pull?since=0")).epoch;
-    await call("DELETE", "/reset");
+    await call("DELETE", "/erase");
     await call("POST", "/push", { ops: [op("fresh", 60)] });
 
     const w = await call("PUT", "/snapshot", { seq: 1, epoch: stale, blob: { ghost: true } });
@@ -171,7 +180,7 @@ describe("reset", () => {
 
   it("frees a used opId for the rebuilt log", async () => {
     await seed();
-    await call("DELETE", "/reset");
+    await call("DELETE", "/erase");
     const r = await call("POST", "/push", { ops: [op("a", 60)] });
     expect(r.accepted).toBe(1); // "a" existed in the old generation, not this one
   });
@@ -202,8 +211,14 @@ describe("limits, on the DO's SQLite", () => {
     expect(r.full).toBe(true);
     expect(r.stored.length).toBeGreaterThan(0);
     expect(r.stored.length).toBeLessThan(30);
-    await call("DELETE", "/reset");
+    await call("DELETE", "/erase");
     expect((await call("POST", "/push", { ops: [chunk(99)] })).stored).toEqual(["c99"]);
+  });
+
+  it("refuses a push far past maxPushOps unread, across RPC", async () => {
+    const ops = Array.from({ length: 4001 }, (_, i) => ({ opId: `x${i}`, kind: "k", payload: 0 }));
+    expect(await call("POST", "/push", { ops })).toEqual({ seq: 0, accepted: 0, stored: [], rejected: [], tooMany: 1000 });
+    expect((await call("GET", "/?since=0")).ops).toHaveLength(0);
   });
 
   it("pages a long log, and following seq visits every op", async () => {

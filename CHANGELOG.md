@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.5.0 — 2026-11-02
+
+Breaking: `reset()` is gone. Everything else upgrades in place, in either
+order across Worker and client.
+
+- **`reset()` is now `eraseJournal({ confirm: "erase" })`** and throws without
+  that exact argument. It was the one irreversible method on the same RPC
+  surface as `push` and `pull`, so a route that forwarded journal methods by
+  name could empty a log on a client's request. The confirmation is something
+  no forwarded request carries by accident, and the name sits apart from the
+  client protocol. `handleReset` is renamed `handleErase`. To upgrade, replace
+  `journal.reset()` with `journal.eraseJournal({ confirm: "erase" })`.
+- **An oversized push is refused unread.** A push of more than 4× `maxPushOps`
+  (4,000 by default) stores nothing, names nothing, and answers
+  `tooMany: maxPushOps`. Up to that, the first `maxPushOps` are still taken
+  and the rest wait, so a client from before this release with a modest
+  backlog keeps syncing. Because the reply names nothing as stored, an older
+  client drains nothing on it.
+- **The client pushes in batches.** It used to send its whole outbox in one
+  request. It now sends at most `pushBatch` ops (new option, default 1,000),
+  oldest first, and keeps going — up to 50 pushes a sync — while the journal
+  keeps taking them. A route that takes fewer than it was sent still drains,
+  in order. On `tooMany` it shrinks to the size asked for and retries.
+- The README now says the route must cap the request body size: the journal
+  sees a push only after the route has read and parsed all of it.
+
 ## 0.4.0 — 2026-10-29
 
 Limits on everything a client controls, and paged pulls. Nothing to change

@@ -49,7 +49,7 @@ export interface OpStore {
    * Optional: without it, `maxJournalBytes` isn't enforced. */
   bytes?(): number;
   maxSeq(): number;
-  /** Drop every op and start a new epoch. Maintenance only — see handleReset. */
+  /** Drop every op and start a new epoch. Maintenance only — see handleErase. */
   clear(): number;
   /** Identifies this generation of the log; changes on clear(). */
   epoch(): string;
@@ -67,7 +67,8 @@ export interface JournalLimits {
    * 2 MB, so an op much bigger than this would fail at the insert anyway. */
   maxOpBytes: number;
   /** Ops considered per push. The rest stay in the client's outbox for the
-   * next one. */
+   * next one. A push of more than PUSH_REFUSE_FACTOR times this is refused
+   * unread — see `PushResult.tooMany`. */
   maxPushOps: number;
   /** The whole log. Past it, pushes are refused with `full` and the client's
    * outbox keeps them. */
@@ -86,6 +87,12 @@ export const DEFAULT_LIMITS: JournalLimits = Object.freeze({
   maxPullOps: 5000,
   maxPullBytes: 4 * 1024 * 1024,
 });
+
+/** A push this many times past `maxPushOps` isn't a backlog to take a slice
+ * of — it's refused before any op is looked at. The slack is for clients that
+ * predate `tooMany` and send their whole outbox: a modest backlog still goes
+ * through a slice at a time. */
+export const PUSH_REFUSE_FACTOR = 4;
 
 const utf8 = new TextEncoder();
 const byteLength = (s: string) => utf8.encode(s).byteLength;
@@ -111,9 +118,19 @@ export interface PushResult {
   /** The log is at `maxJournalBytes`. Nothing from the first op that didn't
    * fit onwards was stored — order is kept — and the client keeps it all. */
   full?: true;
+  /** The push was refused unread: it carried far more ops than this journal
+   * considers in one push. This is the most to send per push. Nothing was
+   * stored, and `stored` is empty, so every client — including one that
+   * predates this field — keeps its whole outbox. */
+  tooMany?: number;
 }
 
 export function handlePush(store: OpStore, ops: JournalOp[], limits: JournalLimits = DEFAULT_LIMITS): PushResult {
+  // The route has already parsed this and RPC has copied it, so the memory is
+  // spent; what's saved is the per-op work, and the client learns to send less.
+  if (Array.isArray(ops) && ops.length > limits.maxPushOps * PUSH_REFUSE_FACTOR) {
+    return { seq: store.maxSeq(), accepted: 0, stored: [], rejected: [], tooMany: limits.maxPushOps };
+  }
   let accepted = 0;
   const stored: string[] = [];
   const rejected: string[] = [];
@@ -250,7 +267,7 @@ function entryBytes(op: { opId: string; kind: string }, payloadJson: string): nu
   return byteLength(op.opId) + byteLength(op.kind) + byteLength(payloadJson);
 }
 
-/** Empty the log and start a new epoch.
+/** Empty the log and start a new epoch. Irreversible.
  *
  * An append-only log has no delete, so an op that should never have been
  * recorded can't be withdrawn — reset is the escape hatch. It is only safe
@@ -260,7 +277,7 @@ function entryBytes(op: { opId: string; kind: string }, payloadJson: string): nu
  * The new epoch is what makes this safe: every client is holding a cursor from
  * a log that no longer exists, usually pointing PAST the rebuilt one, so
  * `seq > cursor` would match nothing and they'd silently never sync again. */
-export function handleReset(store: OpStore): { cleared: number; epoch: string } {
+export function handleErase(store: OpStore): { cleared: number; epoch: string } {
   const cleared = store.clear();
   return { cleared, epoch: store.epoch() };
 }

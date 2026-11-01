@@ -2,7 +2,7 @@
  *
  * This is exactly what a consumer writes — a route handler per method — so the
  * suite exercises the real path a client takes: HTTP into the Worker, RPC into
- * the DO. Deliberately unsafe: it also exposes reset, because the point here is
+ * the DO. Deliberately unsafe: it also exposes eraseJournal, because the point here is
  * to reach every method, not to model a safe public surface. It tests `src`, so
  * a regression is caught before a publish. */
 import { DEFAULT_LIMITS, SyncJournal } from "../../src/server/index.js";
@@ -30,7 +30,13 @@ export default {
       return json(await journal.putSnapshot((await req.json()) as never));
     }
     if (req.method === "DELETE") {
-      return json(await journal.reset());
+      // `?confirm=` lets a test send what a careless forwarder would: nothing.
+      const confirm = url.searchParams.has("confirm") ? url.searchParams.get("confirm") : "erase";
+      try {
+        return json(await journal.eraseJournal({ confirm } as { confirm: "erase" }));
+      } catch (e) {
+        return Response.json({ error: String((e as Error).message) }, { status: 400 });
+      }
     }
     if (url.pathname === "/ops") {
       return json(await journal.opsByKind(url.searchParams.get("kind") ?? ""));
