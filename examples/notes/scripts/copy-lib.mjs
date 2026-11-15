@@ -8,7 +8,7 @@ const dest = new URL("../public/lib/client/", import.meta.url);
 try {
   await access(src);
 } catch {
-  console.error("durable-sync not installed yet — run `npm install` first.");
+  console.error("durable-sync not installed yet — run `bun install` first.");
   process.exit(1);
 }
 

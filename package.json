@@ -48,7 +48,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prepublishOnly": "npm run test && npm run build",
+    "prepublishOnly": "bun run test && bun run build",
     "test:integration": "vitest run --config vitest.integration.config.ts"
   },
   "devDependencies": {

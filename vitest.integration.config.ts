@@ -1,5 +1,5 @@
 /** Opt-in integration suite: the journal inside a real Durable Object, on the
- * SQLite that actually ships. `npm test` never runs this — it's `npm run
+ * SQLite that actually ships. `bun run test` never runs this — it's `bun run
  * test:integration`, because it boots workerd and is an order of magnitude
  * slower than the unit tests.
  *

@@ -156,7 +156,7 @@ client keeps everything it didn't store and says so in its state.
 
 There's a runnable version of all of this in
 [`examples/notes`](examples/notes) — a Worker plus a browser client with a real
-IndexedDB outbox. `npm install && npm run dev`.
+IndexedDB outbox. `bun install && bun run dev`.
 
 ## Client
 

@@ -6,8 +6,8 @@ whole loop end to end — the server RPC, the durable outbox, the sync lifecycle
 without any of the app it was extracted from.
 
 ```bash
-npm install
-npm run dev      # wrangler dev → http://localhost:8787
+bun install
+bun run dev      # wrangler dev → http://localhost:8787
 ```
 
 Then: add a note, click **Offline**, add a few more (they queue in the outbox),
@@ -47,5 +47,5 @@ forward.
 ## Deploy it
 
 ```bash
-npm run deploy   # needs a Cloudflare account: wrangler login
+bun run deploy   # needs a Cloudflare account: wrangler login
 ```
